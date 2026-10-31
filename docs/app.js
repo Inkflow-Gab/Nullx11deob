@@ -12,13 +12,37 @@ async function api(path, body) {
   if (body !== undefined) {
     options.method = 'POST';
     options.headers = {'Content-Type': 'application/json', 'X-CSRF-Token': state.session?.csrf || ''};
-    if ($('worker-key').value) options.headers['X-Worker-Key'] = $('worker-key').value;
+    const key = $('worker-key').value.trim();
+    if (key) options.headers['X-Worker-Key'] = key;
     options.body = JSON.stringify(body);
   }
   const response = await fetch(path, options);
   const result = await response.json();
-  if (!response.ok) { const error = new Error(result.error || `Worker returned ${response.status}`); error.status = response.status; throw error; }
+  if (!response.ok) { const error = new Error(result.error || `Worker returned ${response.status}`); error.status = response.status; error.code = result.code; throw error; }
   return result;
+}
+function requestWorkerKey(message) {
+  $('advanced').hidden = false; $('advanced').open = true;
+  $('worker-key').setAttribute('aria-invalid', 'true');
+  $('key-status').textContent = message;
+  notice(message);
+  $('worker-key').scrollIntoView({block: 'center', behavior: 'smooth'});
+  $('worker-key').focus({preventScroll: true});
+}
+async function checkWorkerKey() {
+  if (!state.session || state.session.browser_only) return;
+  if (!$('worker-key').value.trim()) { requestWorkerKey('Paste the key from your Codespace terminal into the field below, then tap Check key.'); return; }
+  $('check-key').disabled = true;
+  try {
+    await api('/api/worker/check-key', {});
+    $('worker-key').removeAttribute('aria-invalid');
+    $('key-status').textContent = 'Key matches this running worker. You can now press Start recovery.';
+    notice('Owner key checked. Press Start recovery when ready. No code has run.');
+  } catch (error) {
+    if (error.code === 'worker_key_required') requestWorkerKey(error.message);
+    else if (error.status === 404) notice('Restart this worker to enable Check key. You can still press Start recovery with your entered key on the older worker.');
+    else notice(error.message);
+  } finally { $('check-key').disabled = false; }
 }
 function toBase64(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -38,6 +62,7 @@ function options() {
   $('engine-note').querySelector('p').textContent = note;
   $('start').disabled = !state.session || !state.data || state.busy;
   const linked = !!state.session?.browser_only && engine === 'luraph';
+  if (!state.session?.browser_only && state.session?.dynamic_enabled && engine === 'luraph' && $('mode').value !== 'inspect' && !$('worker-key').value.trim()) $('advanced').open = true;
   $('runner-panel').hidden = !linked;
   $('privacy-label').lastChild.textContent = linked ? ' Transfer only with consent' : state.session?.browser_only ? ' Files stay in your browser' : ' Session-scoped results';
   $('privacy-mode').textContent = linked ? 'No auto-run' : state.session?.browser_only ? 'No uploads' : 'No sign-up';
@@ -102,6 +127,11 @@ async function start() {
     catch (error) { notice(error.message); }
     return;
   }
+  const engine = state.engine === 'auto' ? state.detected?.engine : state.engine;
+  if (!state.session?.browser_only && state.session?.dynamic_enabled && engine === 'luraph' && $('mode').value !== 'inspect' && !$('worker-key').value.trim()) {
+    requestWorkerKey('Your private worker is running. Paste its owner key into Worker settings below first. Run the displayed command in your Codespace terminal to get the current key.');
+    return;
+  }
   notice(''); resetDownload(); view('log');
   $('empty').hidden = true; $('logs').hidden = false; $('logs').textContent = '[client] Connecting to the worker…\n';
   $('job-badge').textContent = 'Starting';
@@ -120,6 +150,7 @@ async function start() {
     $('job-badge').textContent = 'Not started'; $('job-badge').className = 'job-badge failed';
     $('result-title').textContent = 'No result was published.'; $('result-detail').textContent = 'Review the message and try again.';
     busy(false); clearInterval(clockTimer);
+    if (error.code === 'worker_key_required' || (error.status === 403 && /owner.*key|access key/i.test(error.message))) requestWorkerKey(error.message);
   }
 }
 async function poll() {
@@ -185,6 +216,8 @@ $('remove-file').addEventListener('click', () => {
 document.querySelectorAll('[data-engine]').forEach(button => button.addEventListener('click', () => chooseEngine(button.dataset.engine)));
 $('mode').addEventListener('change', options); $('log-tab').addEventListener('click', () => view('log')); $('source-tab').addEventListener('click', () => view('source'));
 $('start').addEventListener('click', start);
+$('check-key').addEventListener('click', checkWorkerKey);
+$('worker-key').addEventListener('input', () => { $('worker-key').removeAttribute('aria-invalid'); $('key-status').textContent = ''; });
 $('cancel').addEventListener('click', async () => { try { await api(`/api/jobs/${state.job}/cancel`, {}); } catch (error) { notice(error.message); } });
 $('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(state.source); $('copy').textContent = 'Copied ✓'; setTimeout(() => $('copy').textContent = 'Copy source ↥', 1600); }
@@ -200,6 +233,7 @@ async function connect() {
       $('advanced').hidden = true; options();
       return;
     }
+    if (state.session.owner_key_command) $('key-command').textContent = state.session.owner_key_command;
     $('connection').lastChild.textContent = state.session.dynamic_enabled ? ' Private worker online' : ' Static worker online';
     options();
     window.nullRuntimeLink?.receive(async payload => {

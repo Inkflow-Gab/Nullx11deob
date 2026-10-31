@@ -242,8 +242,9 @@ multi-tenant service, and must not be treated as an internet-facing execution sa
 The `start.py --web --private-worker` command above generates an owner-only key
 file under ignored `output/`, never prints the secret in server logs, and uses a
 separate `output/private-web-jobs-PORT/` directory so it does not delete an existing
-safe worker's jobs. It does not enable public unauthenticated execution. Each
-restart generates a new key unless you supply `NULL_WEB_ACCESS_KEY`. Generated key
+safe worker's jobs. It does not enable public unauthenticated execution. A valid existing generated key file is reused across restarts, so restarting
+does not normally invalidate your copied key. Deleting/replacing that file or
+changing `NULL_WEB_ACCESS_KEY` changes the required key. Generated key
 files remain until you remove them; do not commit/share them.
 
 For the original environment-key workflow, create a key (not a GitHub token):
@@ -348,3 +349,16 @@ all protected files or 15.1. Wrong source/window/nonce and replay are tested.
 The existing browser-only Clyde workflow is preserved. A Codespace with real
 GitHub authentication/COOP was not provisioned in this session; use manual upload
 if its authentication redirects isolate the opener.
+
+## “Owner access key” error on mobile
+
+Open the **private forwarded worker tab**, not the Pages tab. Expand **Worker
+settings**, run `cat output/private-worker-8080.key` in that Codespace terminal,
+and paste only its output into the key field. Tap **Check key**, then Start.
+The UI trims copied edge whitespace and opens/focuses this field before an empty-key
+submission. The check endpoint validates the key without executing uploaded code,
+and returns neither a credential nor a session authorization bypass. The key stays
+in this tab only. If using `NULL_WEB_ACCESS_KEY`, use that configured value instead.
+Never post the key in chat or include it in a URL. Existing Codespaces must pull
+this branch and restart their worker to get backend/UI changes; entering the correct
+key in the original Worker settings already works without an update.

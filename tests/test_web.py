@@ -95,6 +95,17 @@ class WebUnitTests(unittest.TestCase):
                 web.main()
         manager.assert_not_called()
 
+    def test_generated_key_is_reusable_but_invalid_files_are_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'worker.key'
+            key = 'synthetic_generated_key_for_tests_1234'
+            web.save_private_key(path, key)
+            self.assertEqual(web.load_private_key(path), key)
+            path.write_text('short')
+            self.assertIsNone(web.load_private_key(path))
+            path.write_text('a' * 300)
+            self.assertIsNone(web.load_private_key(path))
+
     def test_generated_owner_key_is_private_and_atomic(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'worker.key'
@@ -176,6 +187,24 @@ class HTTPTests(unittest.TestCase):
     def test_invalid_base64_and_empty_upload(self):
         self.assertEqual(self.request('/api/jobs', {'data': '!!!!', 'settings': {}})[0], 400)
         self.assertEqual(self.request('/api/jobs', self.payload(b''))[0], 400)
+
+    def test_check_owner_key_does_not_start_jobs_or_expose_key(self):
+        self.manager.allow_dynamic = True
+        self.manager.access_key = 'synthetic-test-worker-key-123456789'
+        status, body = self.request('/api/worker/check-key', {}, {'X-Worker-Key': self.manager.access_key})
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {'valid': True})
+        self.assertEqual(len(self.manager.jobs), 0)
+        for key in ('', 'incorrect'):
+            status, body = self.request('/api/worker/check-key', {}, {'X-Worker-Key': key})
+            self.assertEqual(status, 403)
+            self.assertEqual(body['code'], 'worker_key_required')
+            self.assertNotIn(self.manager.access_key, json.dumps(body))
+        self.assertEqual(len(self.manager.jobs), 0)
+
+    def test_check_owner_key_still_requires_csrf(self):
+        status, _ = self.request('/api/worker/check-key', {}, {'X-CSRF-Token': ''})
+        self.assertEqual(status, 403)
 
     def test_json_type_validation(self):
         for data in (None, [], 123, {}):

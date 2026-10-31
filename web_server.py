@@ -36,6 +36,10 @@ MAX_BODY = (MAX_INPUT * 4 // 3) + 65536
 TERMINAL = {'ready', 'partial', 'unverified', 'failed', 'cancelled'}
 
 
+class WorkerKeyError(PermissionError):
+    """Only the owner key is missing/invalid; never weaken job authorization."""
+
+
 def detection(data):
     text = data[:20000].decode('utf-8', errors='replace')
     luraph = cli.BANNER.search(text[:4096])
@@ -133,6 +137,10 @@ class Manager:
                 self.jobs.pop(job.id, None)
                 shutil.rmtree(job.folder, ignore_errors=True)
 
+    def require_owner_key(self, key):
+        if not hmac.compare_digest(key.encode('utf-8'), self.access_key.encode('utf-8')):
+            raise WorkerKeyError('Missing or incorrect owner key. Open Worker settings, paste the current key from your Codespace terminal, and check it before starting. A restarted worker may have a new key.')
+
     def submit(self, owner, name, data, settings, key=''):
         if not data or len(data) > MAX_INPUT:
             raise ValueError('Choose a non-empty Lua/text file no larger than 8 MiB.')
@@ -150,8 +158,7 @@ class Manager:
         if engine == 'luraph' and settings.get('mode') != 'inspect':
             if not self.allow_dynamic:
                 raise PermissionError('Dynamic Luraph is disabled on this safe-mode server. Static VM inspection is available; see WEB.md for a private, owner-authenticated worker.')
-            if not hmac.compare_digest(key.encode('utf-8'), self.access_key.encode('utf-8')):
-                raise PermissionError('The private Luraph worker requires its owner access key.')
+            self.require_owner_key(key)
         self.cleanup()
         with self.lock:
             if len(self.jobs) >= 20 or self.pending.full():
@@ -405,7 +412,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'csrf': self.csrf(sid), 'max_bytes': MAX_INPUT,
                                   'dynamic_enabled': self.manager.allow_dynamic,
                                   'node_available': bool(shutil.which('node')), 'ast_available': bool(cli.find_ast()),
-                                  'runtime_available': bool(cli.find_runtime())}, extra={
+                                  'runtime_available': bool(cli.find_runtime()),
+                                  'owner_key_command': f'cat output/private-worker-{self.server.server_port}.key'}, extra={
                                       'Set-Cookie': 'null_session=' + sid + '; HttpOnly; Path=/' + policy})
         match = re.fullmatch(r'/api/jobs/([0-9a-f]{32})(/download|/preview|/report)?', url.path)
         sid = self.session()
@@ -441,6 +449,8 @@ class Handler(BaseHTTPRequestHandler):
             self.post()
         except (ValueError, json.JSONDecodeError, UnicodeError) as exc:
             self.send(400, {'error': str(exc)})
+        except WorkerKeyError as exc:
+            self.send(403, {'error': str(exc), 'code': 'worker_key_required'})
         except PermissionError as exc:
             self.send(403, {'error': str(exc)})
         except (BrokenPipeError, ConnectionResetError):
@@ -479,6 +489,11 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('Expected a JSON object.')
         if self.path in ('/api/detect', '/api/jobs') and not isinstance(payload.get('data'), str):
             raise ValueError('File data must be a base64 string.')
+        if self.path == '/api/worker/check-key':
+            if not self.manager.allow_dynamic:
+                raise PermissionError('Dynamic Luraph is disabled on this worker.')
+            self.manager.require_owner_key(self.headers.get('X-Worker-Key', ''))
+            return self.send(200, {'valid': True})
         if self.path == '/api/detect':
             data = base64.b64decode(payload.get('data', ''), validate=True)
             if len(data) > MAX_INPUT:
@@ -511,6 +526,24 @@ class Server(ThreadingHTTPServer):
         self.manager = manager
         self.secret = secrets.token_bytes(32)
         super().__init__(address, Handler)
+
+
+def load_private_key(path):
+    """Reuse only a bounded, locally generated URL-safe key, never a symlink."""
+    path = Path(path)
+    try:
+        if path.is_symlink():
+            return None
+        with path.open('r', encoding='ascii') as file:
+            raw = file.read(257)
+        if len(raw) > 256:
+            return None
+        key = raw.strip()
+        if 24 <= len(key) <= 256 and re.fullmatch(r'[A-Za-z0-9_-]+', key):
+            return key
+    except (OSError, UnicodeError):
+        pass
+    return None
 
 
 def save_private_key(path, key):
@@ -556,12 +589,15 @@ def main():
     try:
         folder = f'private-web-jobs-{server.server_port}' if args.private_worker else ('web-jobs' if server.server_port == 8080 else f'web-jobs-{server.server_port}')
         data_dir = args.data_dir or ROOT / 'output' / folder
+        if generated:
+            key_path = ROOT / 'output' / f'private-worker-{server.server_port}.key'
+            key = load_private_key(key_path) or key
         manager = Manager(data_dir, dynamic, key, args.timeout)
         server.manager = manager
         if generated:
             key_path = ROOT / 'output' / f'private-worker-{server.server_port}.key'
             save_private_key(key_path, key)
-            print(f'Owner key saved locally (not in logs): {key_path}', flush=True)
+            print(f'Owner key file (retained across restarts, never logged): {key_path}', flush=True)
             print('Read that file locally and paste the key in Worker settings in the PRIVATE runner tab. Never paste it into Pages or make this port public.', flush=True)
     except BaseException:
         if manager:
