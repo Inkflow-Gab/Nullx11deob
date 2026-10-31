@@ -17,6 +17,8 @@ The first v15.1 attempt produced only comments. That file is deliberately **not*
 
 See [`research-15.1.md`](research-15.1.md). A source-reviewed public v15.1 candidate was tested with two separately source-built runtimes. It got further than the current engine, but neither attempt produced correct full recovery. Broken output was deliberately not promoted to a successful decode.
 
+The latest focused investigation is recorded in [`steal.blockers.json`](steal.blockers.json). A fresh live reconstruction still reported 11 unlifted blocks; independent AST inspection found 44 actual `nil` calls, 13 emitted devirtualization-error sites, and six unresolved runtime-function stubs. An experimental cross-instruction numeric-state repair did not resolve these failures. The published partial Lua file is unchanged; **no fully working `steal.deobfuscated.lua` has been recovered**.
+
 `StealB` has clean reconstruction counters and no obvious unresolved-marker/`nil`-call artifacts in the follow-up scan. That still does **not** prove full behavioral equivalence or include its externally loaded libraries.
 
 ## Credential handling

@@ -65,5 +65,27 @@
       }
     ],
     "report": "research-15.1.md"
+  },
+  "latest_steal_investigation": {
+    "analysis_date": "2026-10-31",
+    "report": "steal.blockers.json",
+    "full_recovery_achieved": false,
+    "live_baseline": {
+      "functions": 36,
+      "unlifted_blocks": 11,
+      "ast_nil_calls": 44,
+      "emitted_devirt_error_sites": 13,
+      "runtime_function_stubs": 6,
+      "syntax_valid": true
+    },
+    "numeric_carry_experiment": {
+      "functions": 36,
+      "unlifted_blocks": 11,
+      "ast_nil_calls": 123,
+      "syntax_valid": true,
+      "accepted": false
+    },
+    "published_lua_artifacts_changed": false,
+    "experimental_patch_installed_in_main_engine": false
   }
 }

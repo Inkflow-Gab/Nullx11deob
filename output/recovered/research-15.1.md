@@ -48,6 +48,22 @@ This supports a real model/instrumentation mismatch in the existing engine. It d
 
 **Verdict: failed full recovery.** The experimental runtime/source was not installed into the everyday deobfuscator, and the broken output was not published as `steal.deobfuscated.lua`.
 
+## Focused follow-up: closure bindings and cross-instruction state
+
+A fresh source build of Luau 0.739 was used after the local analysis cache was rebuilt. Candidate native binaries were again replaced with trusted local builds before execution. The exact candidate base commit remains unchanged. This was a diagnostic investigation, not evidence of new upstream support.
+
+1. **Fresh live capture:** 36 functions, 11 unlifted blocks, zero final constant requests. The selected reconstruction passed syntax validation, but independent AST inspection found **44 actual calls to `nil`, 13 emitted `devirt:` error sites, and six runtime-function stubs** that raise `Luraph runtime function, not devirtualized`. This is concrete evidence that a parsing file and JSON `success: true` can still be unusable.
+2. **Closure-binding probe:** an offline capture walk observed 34 closure render calls without missing register-name bindings. This does not rule out wrong captured values or unobserved closures. The offline walk also had **290 pending constant requests**, so its function/error counts cannot be equated with those of the live, request-enabled lift.
+3. **Numeric-state experiment:** a research-only change preserved numeric/boolean prologue locals that handlers both read before writing and write across instructions, excluding known fixed/special/register-file/stack-pointer locals. This tested a possible gap in the candidate's cross-instruction state model. With a bounded 20,000-state walk, the live run still reported **36 functions and 11 unlifted blocks**. Its syntax-valid reconstruction contained **123 AST-confirmed `nil` calls**, 13 emitted error sites, and six runtime-function stubs. The candidate rejected that reconstruction in favor of a trace, which failed independent syntax validation. The change was **not installed in the main engine**.
+
+Remaining emitted failures include symbolic stores into instruction/prototype arrays, corrupt/encrypted register indexes, and a comparison of a missing value against `70`. Removing those checks, replacing `nil` with guessed functions, or deleting error statements would not establish correct recovery.
+
+Counts differ between fresh captures; the earlier 150/55 counts and the latest 44/123 counts describe their respective actual runs, not a controlled proof of improvement or regression. Neither latest run satisfies full recovery.
+
+The credential-free [`steal.blockers.json`](steal.blockers.json) records hashes, parser results, exact error-marker messages, and AST call-site locations. Experimental Lua and raw captures remain excluded from Git. Both published Lua artifacts were independently syntax-checked again and their hashes are unchanged.
+
+**Outcome: full recovery still not achieved.** The existing `steal.partial-decoded.lua` was preserved rather than replaced by a broken reconstruction.
+
 ## What about StealB?
 
 `StealB.deobfuscated.lua` still passes syntax validation. Its original successful run reported **1,138 functions, zero unlifted blocks, zero unstructured jumps**, and zero remaining constant requests. A follow-up literal scan found:
