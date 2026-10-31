@@ -13,7 +13,7 @@ The ready-to-publish site is committed under `docs/`. It runs the pinned Clyde
 engine in a dedicated browser Web Worker, without Node, Python, backend requests,
 or uploading your input. It provides automatic signature detection, actual worker
 logs, a 180-second timeout, cancellation, source preview, local file/report downloads,
-and the same responsive light/dark interface.
+saved completed results on this device, and the same responsive light/dark interface.
 
 ### Pages hosting
 
@@ -123,13 +123,17 @@ URL you own/trust. No request is made to the Gist/MIDI payload during import.
   hash-verified loader already published in this repository. The log and report
   explicitly mark it as a reference recovery, not a new browser AST refinement.
   The remote MIDI payload is still not fetched or included.
-- Clyde input and current results stay in the tab. Closing/reloading discards them;
-  downloaded files remain wherever your browser saves them. The worker never
+- Raw Clyde uploads stay in memory, not saved input history. Completed output,
+  reports, logs and settings are saved in this browser's IndexedDB (up to five runs,
+  approximately 32 MiB). Reopening this same Pages address regenerates working
+  download links. Browser-only work **cannot continue after its tab closes**:
+  unfinished archives say “Original tab needed”; they are never automatically rerun.
+  Downloaded files remain wherever your browser saves them. The worker never
   executes uploaded Lua. GitHub still receives ordinary requests for public
   site assets and may retain standard hosting access logs. Selecting the Luraph
   handoff is different: after confirmation your script goes to the worker you
   entered, where its normal upload/retention policy applies.
-- File limit 8 MiB, output limit 16 MiB; only the current result is retained.
+- File limit 8 MiB, output limit 16 MiB; older browser archives are evicted to fit the history budget.
   A large input can exceed browser memory despite these bounds. Cancellation
   terminates the worker. Logs have the same 256 KB / 4,000-line cap.
 
@@ -265,8 +269,13 @@ Start the private worker:
 python3 web_server.py --allow-dynamic --host 0.0.0.0 --port 8080
 ```
 
-Keep the forwarded port private. The key is kept in the browser tab only, never
-localStorage, and is excluded from engine subprocess environments. Do not put it
+Keep the forwarded port private. The key stays in the current tab by default.
+You can opt into **Remember key on this device** before Check key or Start: after a
+successful key check or owner-authenticated dynamic start, it is saved in localStorage for seven days. It is **plaintext
+browser-profile storage**, readable by people with access to that profile and
+same-origin scripts; do not use this option on shared devices. **Forget saved key**
+removes it and empties the field, without deleting jobs. The key is excluded from
+engine subprocess environments and is never sent to Pages. Do not put it
 in source control or a URL. For Codespaces auto-start, configure `NULL_WEB_DYNAMIC=1`
 as a private Codespaces environment setting before restarting the container.
 `NULL_WEB_ACCESS_KEY` is optional in that explicit mode: absent it, the launcher
@@ -276,7 +285,7 @@ generates `output/private-worker-8080.key`. The default launcher does not enable
 
 - 8 MiB per upload; one running worker, at most four queued, twenty retained jobs.
 - Default engine timeout 180 seconds; `--timeout` accepts 10–1800 seconds.
-- Signed HttpOnly session cookie; CSRF tokens and same-origin writes. Local HTTP
+- Signed HttpOnly owner session cookie retained for seven days; CSRF tokens and same-origin writes. Local HTTP
   uses SameSite=Strict; HTTPS forwarded previews use Secure, SameSite=None,
   Partitioned (CHIPS) so the embedded workspace works without sharing a cookie
   across top-level sites. Open the preview in its own tab if a browser blocks
@@ -284,9 +293,16 @@ generates `output/private-worker-8080.key`. The default launcher does not enable
   Different sessions cannot view another session's logs, report, preview or download.
 - Uploads/results are stored as plaintext in ignored `output/web-jobs/` or
   `output/private-web-jobs-PORT/` directories.
-  Terminal jobs expire one hour after creation; a clean shutdown removes job data,
-  and a subsequent startup removes previous run job directories. A crash does not
-  securely erase disk contents. Do not upload sensitive material to an untrusted host.
+  Finished results are retained for **24 hours from completion** (creation fallback
+  for older metadata). Expiry cleanup runs while the worker is running, on access
+  and at startup, not while a Codespace is stopped. Private atomic job journals and
+  a persistent signing secret restore completed jobs after a process restart;
+  recovered files are size/hash checked before downloads are restored. A missing
+  or changed result is not served. Interrupted queued/running jobs require another
+  upload; they are **never automatically executed again**. Journals are capped at
+  2 MiB; a disk/full-metadata warning means download before restarting rather than
+  relying on persistence. A crash does not securely erase disk contents.
+  Do not upload sensitive material to an untrusted host.
 - Logs are bounded to 256 KB / 4,000 lines, no access-key/request-body access logs, and no permissive CORS.
   Child environments exclude GitHub/cloud credentials. These are mitigations, not OS isolation.
 - Use HTTPS for any remote deployment. This built-in server is a private launcher,
@@ -358,7 +374,77 @@ and paste only its output into the key field. Tap **Check key**, then Start.
 The UI trims copied edge whitespace and opens/focuses this field before an empty-key
 submission. The check endpoint validates the key without executing uploaded code,
 and returns neither a credential nor a session authorization bypass. The key stays
-in this tab only. If using `NULL_WEB_ACCESS_KEY`, use that configured value instead.
+in this tab unless you opt into **Remember key on this device**. If using
+`NULL_WEB_ACCESS_KEY`, use that configured value instead.
 Never post the key in chat or include it in a URL. Existing Codespaces must pull
 this branch and restart their worker to get backend/UI changes; entering the correct
 key in the original Worker settings already works without an update.
+
+
+## Return later: progress, history and downloads
+
+Use the **same worker address, browser profile and cookie storage**. The welcome
+banner automatically reopens your last available recovery; **Recent recoveries**
+lets you reopen older runs and refresh activity. A private backend job continues
+when the browser closes **only while the Codespace and worker remain running**.
+Its real progress reconnects when you return; a completed job offers the file and
+report again. A Codespace stopping/idling is not the same as closing your browser.
+After a worker restart, only already completed files are recoverable; unfinished
+work is marked interrupted, not silently rerun.
+
+The owner cookie and private job journal are still required: remembering the owner
+key does **not** grant access to another browser session's results. Clearing cookies,
+using a different origin/profile, deleting the Codespace/disk or deleting its private
+session-secret file loses access to that history. Remembered keys are scoped to the
+private worker origin/path and are not shared with Pages. Clearing browser site data,
+private-browsing shutdown, quota eviction or disabled storage can remove Pages
+archives and remembered keys; always download important files yourself.
+
+**Clear finished** deletes that session's completed server runs/files or the browser's
+saved archives, not other sessions' jobs. Active server jobs are not cancelled.
+Browser archives from other tabs are detached: clearing them removes their saved
+marker but does not control that other tab. There is no cross-device account sync.
+
+### Update an existing Codespace (mobile)
+
+Download any old results **before this first upgrade**: the old version did not
+write restart journals and those results cannot be recovered retroactively.
+Wait for running jobs to finish. In the Codespace terminal, stop the old worker
+with Ctrl+C if it is in the foreground. For an auto-started/background worker,
+restart the Codespace after pulling so there is only one process on port 8080.
+Do not make the port public.
+
+Run these separately in the existing repository terminal:
+
+```bash
+git pull --ff-only origin arena/247512c5-nullx11deob
+```
+
+Then stop/restart the Codespace (the dedicated worker template starts the updated
+worker automatically), reopen its private forwarded port 8080, and reload the page.
+If using a manually started worker instead, after stopping its old process run:
+
+```bash
+python3 start.py --web --private-worker --port 8080
+```
+
+Read the key **in that Codespace**, not in chat or Pages:
+
+```bash
+cat output/private-worker-8080.key
+```
+
+Open **Worker settings**, paste it, optionally tick **Remember key on this device**,
+and tap **Check key**. Successful checking does not start any code. An existing
+valid generated key is reused on restart.
+
+### Persistence verification
+
+The regression suite covers durable cookies/files, private history isolation,
+restart interruption without execution, expiry and history clearing. Mobile-width
+Chromium checks additionally closed/relaunched the browser process immediately after
+native submission, restored the remembered key and native result download, verified
+Forget across restart, restored an identical Pages Blob download, and showed an
+unfinished browser archive honestly without rerunning it. No JavaScript errors or
+horizontal overflow were observed at 390 px. Actual authenticated user Codespaces,
+physical mobile devices and browser-specific storage eviction remain untested.

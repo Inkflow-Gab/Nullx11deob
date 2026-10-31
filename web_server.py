@@ -33,7 +33,9 @@ ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / 'web'
 MAX_INPUT = 8 * 1024 * 1024
 MAX_BODY = (MAX_INPUT * 4 // 3) + 65536
-TERMINAL = {'ready', 'partial', 'unverified', 'failed', 'cancelled'}
+JOB_TTL = 24 * 3600
+SESSION_TTL = 7 * 24 * 3600
+TERMINAL = {'ready', 'partial', 'unverified', 'failed', 'cancelled', 'interrupted'}
 
 
 class WorkerKeyError(PermissionError):
@@ -81,6 +83,7 @@ class Job:
         self.data = data
         self.settings = settings
         self.created = time.time()
+        self.finished = None
         self.state = 'queued'
         self.stage = 0
         self.logs = []
@@ -106,7 +109,7 @@ class Job:
         with self.lock:
             return {'id': self.id, 'name': self.filename, 'state': self.state, 'stage': self.stage,
                     'logs': self.logs[after:after + 200], 'cursor': min(len(self.logs), after + 200),
-                    'detection': self.detected, 'report': self.report,
+                    'detection': self.detected, 'report': self.report, 'created': self.created, 'finished': self.finished, 'settings': self.settings,
                     'download': f'/api/jobs/{self.id}/download' if self.result else None}
 
 
@@ -123,16 +126,93 @@ class Manager:
         self.lock = threading.RLock()
         self.pending = queue.Queue(maxsize=4)
         self.stopping = threading.Event()
-        # Remove uploads/results left by an earlier server run; no cross-run sessions.
-        for item in self.folder.iterdir():
-            if item.is_dir() and re.fullmatch(r'[0-9a-f]{32}', item.name):
-                shutil.rmtree(item)
+        self.session_secret = self.load_session_secret()
+        self.restore_jobs()
         self.worker = threading.Thread(target=self.work, daemon=True)
         self.worker.start()
 
+    def load_session_secret(self):
+        path = self.folder / '.session-secret'
+        if path.is_file() and not path.is_symlink() and path.stat().st_size == 32:
+            value = path.read_bytes()
+            if len(value) == 32:
+                return value
+        value = secrets.token_bytes(32)
+        with tempfile.NamedTemporaryFile(dir=self.folder, delete=False) as file:
+            file.write(value)
+            temporary = file.name
+        os.replace(temporary, path)
+        return value
+
+    def persist(self, job):
+        if not job.folder.is_dir():
+            return
+        with job.lock:
+            record = dict(job.snapshot(), owner=job.owner, logs=list(job.logs), result=job.result.name if job.result else None)
+            record.pop('download', None)
+            record.pop('cursor', None)
+            encoded = json.dumps(record, ensure_ascii=False).encode('utf-8')
+            if len(encoded) > 2 * 1024 * 1024:
+                job.log('[warning] Result metadata exceeds the saved-history limit; download before restarting the worker.')
+                return
+            with tempfile.NamedTemporaryFile(dir=job.folder, delete=False) as file:
+                file.write(encoded)
+                temporary = file.name
+            os.replace(temporary, job.folder / 'job.json')
+
+    def restore_jobs(self):
+        for folder in self.folder.iterdir():
+            if not folder.is_dir() or not re.fullmatch(r'[0-9a-f]{32}', folder.name):
+                continue
+            try:
+                if folder.is_symlink():
+                    continue
+                path = folder / 'job.json'
+                if path.is_symlink() or path.stat().st_size > 2 * 1024 * 1024:
+                    raise ValueError('Invalid journal')
+                record = json.loads(path.read_text(encoding='utf-8'))
+                if not isinstance(record, dict) or not isinstance(record.get('report'), dict) or not isinstance(record.get('settings'), dict) or not isinstance(record.get('logs'), list):
+                    raise ValueError('Invalid journal shape')
+                if not re.fullmatch(r'[0-9a-f]{48}\.[0-9a-f]{64}', record['owner']):
+                    raise ValueError('Invalid owner')
+                if time.time() - (record.get('finished') or record['created']) > JOB_TTL or len(self.jobs) >= 20:
+                    raise ValueError('Expired history')
+                job = Job(record['owner'], folder, record['name'], b'', record['settings'])
+                job.created, job.finished = record['created'], record.get('finished')
+                job.detected = record.get('detection', {})
+                job.state, job.stage = record['state'], int(record['stage'])
+                for line in record.get('logs', [])[:4000]:
+                    job.log(line)
+                job.report = record.get('report', {})
+                result = record.get('result')
+                if result in ('result.lua', 'result.json') and (folder / result).is_file() and not (folder / result).is_symlink():
+                    target = folder / result
+                    if target.stat().st_size <= 16 * 1024 * 1024 and hashlib.sha256(target.read_bytes()).hexdigest() == job.report.get('output_sha256'):
+                        job.result = target
+                if job.state not in TERMINAL:
+                    job.state, job.result, job.finished = 'interrupted', None, time.time()
+                    job.log('[interrupted] Worker restarted before this job finished. Upload again; code is never automatically rerun.')
+                elif result and not job.result:
+                    job.state = 'failed'
+                    job.log('[error] Saved result missing or changed; download unavailable.')
+                self.jobs[job.id] = job
+                self.persist(job)
+            except (OSError, ValueError, KeyError, TypeError):
+                shutil.rmtree(folder, ignore_errors=True)
+
+    def history(self, owner):
+        self.cleanup()
+        with self.lock:
+            jobs = [job for job in self.jobs.values() if hmac.compare_digest(job.owner, owner)]
+        records = []
+        for job in sorted(jobs, key=lambda item: item.created, reverse=True):
+            item = job.snapshot()
+            records.append({key: item[key] for key in ('id', 'name', 'state', 'stage', 'created', 'finished', 'settings', 'download')})
+        return records
+
     def cleanup(self):
         with self.lock:
-            expired = [j for j in self.jobs.values() if j.state in TERMINAL and time.time() - j.created > 3600]
+            expired = [j for j in self.jobs.values() if j.state in TERMINAL and time.time() - (j.finished or j.created) > JOB_TTL]
             for job in expired:
                 self.jobs.pop(job.id, None)
                 shutil.rmtree(job.folder, ignore_errors=True)
@@ -167,6 +247,12 @@ class Manager:
             folder.mkdir(mode=0o700)
             job = Job(owner, folder, name, data, dict(settings, engine=engine))
             self.jobs[job.id] = job
+            try:
+                self.persist(job)
+            except OSError:
+                self.jobs.pop(job.id, None)
+                shutil.rmtree(folder, ignore_errors=True)
+                raise
             self.pending.put_nowait(job)
         return job
 
@@ -224,6 +310,7 @@ class Manager:
                 return
             job.state = 'running'
             job.stage = 1
+        self.persist(job)
         source = job.folder / 'input.lua'
         source.write_bytes(job.data)
         job.data = b''
@@ -318,15 +405,20 @@ class Manager:
                 self.execute(job)
             except InterruptedError as exc:
                 with job.lock:
-                    job.state = 'cancelled'
-                job.log('[cancelled] ' + str(exc))
+                    job.state = 'interrupted' if self.stopping.is_set() else 'cancelled'
+                job.log(('[' + job.state + '] ') + str(exc))
             except Exception as exc:
                 with job.lock:
-                    job.state = 'failed'
+                    job.state = 'interrupted' if self.stopping.is_set() else 'failed'
                     job.result = None
-                job.log('[error] ' + str(exc))
+                job.log(('[interrupted] ' if self.stopping.is_set() else '[error] ') + str(exc))
             finally:
                 job.data = b''
+                job.finished = time.time()
+                try:
+                    self.persist(job)
+                except OSError:
+                    job.log('[warning] Could not save restart history; download before stopping this worker.')
                 self.pending.task_done()
 
     def close(self):
@@ -338,7 +430,12 @@ class Manager:
         self.worker.join(timeout=5)
         with self.lock:
             for job in self.jobs.values():
-                shutil.rmtree(job.folder, ignore_errors=True)
+                with job.lock:
+                    if job.state not in TERMINAL:
+                        job.state, job.result = 'interrupted', None
+                        job.log('[interrupted] Worker stopped. Upload again to restart; no automatic execution.')
+                    job.finished = job.finished or time.time()
+                self.persist(job)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -395,8 +492,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def get(self):
         url = urlsplit(self.path)
-        if url.path in ('/', '/index.html', '/app.js', '/runtime-link.js', '/style.css'):
-            name = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/runtime-link.js': 'runtime-link.js', '/style.css': 'style.css'}[url.path]
+        if url.path in ('/', '/index.html', '/app.js', '/runtime-link.js', '/workspace-store.js', '/style.css'):
+            name = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/runtime-link.js': 'runtime-link.js', '/workspace-store.js': 'workspace-store.js', '/style.css': 'style.css'}[url.path]
             mime = {'html': 'text/html; charset=utf-8', 'js': 'text/javascript; charset=utf-8', 'css': 'text/css; charset=utf-8'}[name.split('.')[-1]]
             return self.send(200, (STATIC / name).read_bytes(), mime)
         if url.path == '/api/session':
@@ -414,7 +511,12 @@ class Handler(BaseHTTPRequestHandler):
                                   'node_available': bool(shutil.which('node')), 'ast_available': bool(cli.find_ast()),
                                   'runtime_available': bool(cli.find_runtime()),
                                   'owner_key_command': f'cat output/private-worker-{self.server.server_port}.key'}, extra={
-                                      'Set-Cookie': 'null_session=' + sid + '; HttpOnly; Path=/' + policy})
+                                      'Set-Cookie': 'null_session=' + sid + '; HttpOnly; Path=/; Max-Age=' + str(SESSION_TTL) + policy})
+        if url.path == '/api/jobs':
+            sid = self.session()
+            if not sid:
+                return self.send(403, {'error': 'Reload to establish your session.'})
+            return self.send(200, {'jobs': self.manager.history(sid), 'retention_seconds': JOB_TTL})
         match = re.fullmatch(r'/api/jobs/([0-9a-f]{32})(/download|/preview|/report)?', url.path)
         sid = self.session()
         job = self.manager.find(match[1], sid) if match and sid else None
@@ -489,6 +591,13 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('Expected a JSON object.')
         if self.path in ('/api/detect', '/api/jobs') and not isinstance(payload.get('data'), str):
             raise ValueError('File data must be a base64 string.')
+        if self.path == '/api/jobs/clear-history':
+            with self.manager.lock:
+                for job in list(self.manager.jobs.values()):
+                    if hmac.compare_digest(job.owner, sid) and job.state in TERMINAL:
+                        self.manager.jobs.pop(job.id, None)
+                        shutil.rmtree(job.folder, ignore_errors=True)
+            return self.send(200, {'ok': True})
         if self.path == '/api/worker/check-key':
             if not self.manager.allow_dynamic:
                 raise PermissionError('Dynamic Luraph is disabled on this worker.')
@@ -524,7 +633,7 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     def __init__(self, address, manager):
         self.manager = manager
-        self.secret = secrets.token_bytes(32)
+        self.secret = manager.session_secret if manager else secrets.token_bytes(32)
         super().__init__(address, Handler)
 
 
@@ -594,6 +703,7 @@ def main():
             key = load_private_key(key_path) or key
         manager = Manager(data_dir, dynamic, key, args.timeout)
         server.manager = manager
+        server.secret = manager.session_secret
         if generated:
             key_path = ROOT / 'output' / f'private-worker-{server.server_port}.key'
             save_private_key(key_path, key)

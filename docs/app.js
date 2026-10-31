@@ -1,8 +1,8 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const state = {session: null, file: null, data: null, engine: 'auto', job: null, cursor: 0, busy: false, source: '', detected: null, began: 0, load: 0};
-let pollTimer, clockTimer;
-const terminal = new Set(['ready', 'partial', 'unverified', 'failed', 'cancelled']);
+let pollTimer, clockTimer, historyTimer, pollEpoch = 0;
+const terminal = new Set(['ready', 'partial', 'unverified', 'failed', 'cancelled', 'interrupted', 'detached']);
 const stages = ['Receiving file', 'Detecting protection', 'Recovery in progress', 'Validating result', 'Result saved'];
 function notice(message) { $('notice').textContent = message || ''; $('notice').hidden = !message; }
 function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MiB`; }
@@ -35,14 +35,74 @@ async function checkWorkerKey() {
   $('check-key').disabled = true;
   try {
     await api('/api/worker/check-key', {});
+    rememberVerifiedKey();
     $('worker-key').removeAttribute('aria-invalid');
     $('key-status').textContent = 'Key matches this running worker. You can now press Start recovery.';
     notice('Owner key checked. Press Start recovery when ready. No code has run.');
   } catch (error) {
-    if (error.code === 'worker_key_required') requestWorkerKey(error.message);
+    if (error.code === 'worker_key_required') { window.nullStore.forgetKey(); requestWorkerKey(error.message); }
     else if (error.status === 404) notice('Restart this worker to enable Check key. You can still press Start recovery with your entered key on the older worker.');
     else notice(error.message);
   } finally { $('check-key').disabled = false; }
+}
+function rememberVerifiedKey() {
+  if (state.session?.browser_only) return;
+  if ($('remember-key').checked) {
+    if (!window.nullStore.saveKey($('worker-key').value.trim())) notice('Key works, but browser storage is blocked. It was not remembered.');
+  } else window.nullStore.forgetKey();
+}
+function stopPolling() { pollEpoch++; clearTimeout(pollTimer); clearInterval(clockTimer); }
+async function loadHistory(restore = false) {
+  if (!state.session) return;
+  try {
+    const response = await api('/api/jobs');
+    const jobs = response.jobs || [];
+    $('history').hidden = false; $('history-count').textContent = ` / ${jobs.length}`;
+    $('history-help').textContent = state.session.browser_only ? 'Saved on this device: up to 5 runs / 32 MiB. Browser-only runs need their original tab to keep working.' : 'Live runs reconnect automatically. Finished results survive worker restarts for up to 24 hours.';
+    $('history-list').replaceChildren();
+    for (const job of jobs) {
+      const row = document.createElement('div'); row.className = 'history-row';
+      const details = document.createElement('div');
+      const name = document.createElement('span'); name.className = 'history-name'; name.textContent = job.name;
+      const meta = document.createElement('span'); meta.className = 'history-meta';
+      meta.textContent = `${job.settings?.engine || 'recovery'} · ${new Date(job.created * 1000).toLocaleString()}`;
+      details.append(name, meta);
+      const status = document.createElement('span'); status.className = 'history-state';
+      if (/^[a-z]+$/.test(job.state)) status.classList.add(job.state);
+      status.textContent = job.state === 'detached' ? 'Original tab needed' : job.state.replace(/^./, char => char.toUpperCase());
+      const button = document.createElement('button'); button.className = 'history-open'; button.textContent = job.download || ['ready', 'partial', 'unverified'].includes(job.state) ? 'View result ↗' : 'View activity ↗';
+      button.disabled = state.busy && state.job !== job.id;
+      button.addEventListener('click', () => openSavedRun(job));
+      row.append(details, status, button); $('history-list').append(row);
+    }
+    if (!jobs.length) { const empty = document.createElement('p'); empty.className = 'history-empty'; empty.textContent = 'Your next recovery will appear here. Come back to this same worker address to reconnect.'; $('history-list').append(empty); }
+    if (restore && jobs.length && !state.file && !state.job && !state.busy) {
+      const latest = window.nullStore.latest();
+      await openSavedRun(jobs.find(job => job.id === latest) || jobs[0], true);
+    }
+  } catch (error) {
+    $('history').hidden = false;
+    $('history-help').textContent = 'Saved activity could not be loaded. Keep this worker running, then tap Refresh.';
+    if (restore) notice('Saved activity could not be loaded yet. Keep this worker running, then tap Refresh in Recent recoveries.');
+  }
+}
+async function openSavedRun(job, restored = false) {
+  if (state.busy && state.job !== job.id) { notice('Finish or cancel the current run before switching activity.'); return; }
+  if (!/^[0-9a-f]{32}$/.test(job.id)) return;
+  stopPolling(); resetDownload();
+  state.job = job.id; state.cursor = 0; state.began = job.created * 1000; state.finished = job.finished ? job.finished * 1000 : null;
+  ++state.load; state.data = null; state.file = null; state.detected = null;
+  if (['auto', 'clyde', 'luraph'].includes(job.settings?.engine)) chooseEngine(job.settings.engine);
+  if (job.settings?.version) $('version').value = job.settings.version;
+  if (job.settings?.mode) $('mode').value = job.settings.mode;
+  $('filename').textContent = job.name; $('filesize').textContent = 'Restored run · upload again to start a new recovery'; $('file-info').hidden = false;
+  $('empty').hidden = true; $('logs').hidden = false; $('logs').textContent = '';
+  $('resume-banner').hidden = false;
+  $('resume-title').textContent = restored ? 'Welcome back. Your workspace is here.' : 'Saved recovery reopened.';
+  $('resume-detail').textContent = ['running', 'queued'].includes(job.state) ? 'Reconnecting to your real worker activity…' : 'Loading the saved activity and any available download…';
+  view('log'); window.nullStore.setLatest(job.id); busy(true); clock();
+  if (!terminal.has(job.state)) clockTimer = setInterval(clock, 1000);
+  await poll();
 }
 function toBase64(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -85,6 +145,7 @@ async function loadFile(file) {
   notice('');
   if (!file || !/\.(lua|luau|txt)$/i.test(file.name)) { notice('Choose a .lua, .luau, or .txt script.'); return; }
   if (!file.size || file.size > 8 * 1024 * 1024) { notice('Choose a non-empty script no larger than 8 MiB.'); return; }
+  stopPolling(); $('resume-banner').hidden = true;
   state.data = null; state.detected = null; state.file = file; state.job = null; resetDownload(); options();
   $('filename').textContent = file.name; $('filesize').textContent = size(file.size) + ' · detecting protection…';
   $('file-info').hidden = false; $('file-title').textContent = 'Script added'; $('file-subtitle').textContent = 'Drop another file to replace it';
@@ -117,7 +178,7 @@ function busy(value) {
   $('cancel').hidden = !value || !state.job; $('live-dot').classList.toggle('busy', value); options();
 }
 function clock() {
-  const seconds = Math.floor((Date.now() - state.began) / 1000);
+  const seconds = Math.floor(((state.finished || Date.now()) - state.began) / 1000);
   $('elapsed').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 async function start() {
@@ -132,6 +193,7 @@ async function start() {
     requestWorkerKey('Your private worker is running. Paste its owner key into Worker settings below first. Run the displayed command in your Codespace terminal to get the current key.');
     return;
   }
+  stopPolling(); state.finished = null; $('resume-banner').hidden = true;
   notice(''); resetDownload(); view('log');
   $('empty').hidden = true; $('logs').hidden = false; $('logs').textContent = '[client] Connecting to the worker…\n';
   $('job-badge').textContent = 'Starting';
@@ -141,7 +203,10 @@ async function start() {
   try {
     const job = await api('/api/jobs', {filename: state.file.name, data: state.data,
       settings: {engine: state.engine, version: $('version').value, mode: $('mode').value}});
-    state.job = job.id; $('cancel').hidden = false;
+    state.job = job.id; window.nullStore.setLatest(job.id);
+    if (state.session?.dynamic_enabled && engine === 'luraph' && $('mode').value !== 'inspect') rememberVerifiedKey();
+    $('cancel').hidden = false;
+    void loadHistory();
     $('result-title').textContent = 'Your job is in the worker queue.';
     $('result-detail').textContent = 'Live engine messages, not an invented percentage.';
     await poll();
@@ -150,12 +215,18 @@ async function start() {
     $('job-badge').textContent = 'Not started'; $('job-badge').className = 'job-badge failed';
     $('result-title').textContent = 'No result was published.'; $('result-detail').textContent = 'Review the message and try again.';
     busy(false); clearInterval(clockTimer);
+    if (error.code === 'worker_key_required') window.nullStore.forgetKey();
     if (error.code === 'worker_key_required' || (error.status === 403 && /owner.*key|access key/i.test(error.message))) requestWorkerKey(error.message);
   }
 }
-async function poll() {
+async function poll(epoch = pollEpoch) {
+  const id = state.job;
   try {
     const job = await api(`/api/jobs/${state.job}?after=${state.cursor}`);
+    if (epoch !== pollEpoch || id !== state.job) return;
+    if (job.created) state.began = job.created * 1000;
+    if (terminal.has(job.state)) state.finished = job.finished ? job.finished * 1000 : Date.now();
+    clock();
     if (job.logs.length) {
       $('logs').textContent += job.logs.join('\n') + '\n';
       const area = document.querySelector('.output-body'); area.scrollTop = area.scrollHeight;
@@ -164,14 +235,14 @@ async function poll() {
     $('job-badge').textContent = job.state === 'ready' ? 'Recovered · review result' : job.state.replace(/^./, c => c.toUpperCase());
     $('job-badge').className = 'job-badge ' + job.state;
     $('stage-label').textContent = job.state === 'queued' ? 'Queued · waiting for worker' : terminal.has(job.state) ?
-      (job.state === 'failed' ? 'Stopped · see activity' : job.state === 'cancelled' ? 'Job cancelled' : 'Finished · review recovery status') : stages[job.stage];
+      (job.state === 'failed' ? 'Stopped · see activity' : job.state === 'cancelled' ? 'Job cancelled' : job.state === 'interrupted' ? 'Worker interrupted · upload again' : job.state === 'detached' ? 'Original browser tab needed' : 'Finished · review recovery status') : stages[job.stage];
     document.querySelectorAll('#stages li').forEach((item, index) => {
       item.classList.toggle('done', index < job.stage || !!job.download);
       item.classList.toggle('current', index === job.stage && !terminal.has(job.state));
     });
     if (terminal.has(job.state)) {
       // Drain bounded log batches before stopping the stream.
-      if (job.logs.length === 200) { pollTimer = setTimeout(poll, 50); return; }
+      if (job.logs.length === 200) { pollTimer = setTimeout(() => poll(epoch), 50); return; }
       clearInterval(clockTimer);
       if (job.download) {
         $('report').href = window.nullBrowser ? window.nullBrowser.reportURL(state.job) : `/api/jobs/${state.job}/report`; $('report').hidden = false;
@@ -179,6 +250,7 @@ async function poll() {
         $('result-title').textContent = job.report.external_payload_included === false ? 'Loader recovered. External payload excluded.' : job.state === 'partial' ? 'Partial recovery. Clearly labeled.' : job.state === 'unverified' ? 'Recovered · syntax not checked.' : 'Source recovered. Inspect before use.';
         $('result-detail').textContent = `${size(job.report.output_bytes)} · ${job.report.syntax_valid ? 'syntax checked' : 'no Lua syntax certificate'} · behavior not verified`;
         const preview = await api(`/api/jobs/${state.job}/preview`);
+        if (epoch !== pollEpoch || id !== state.job) return;
         state.source = preview.text;
         $('source').textContent = preview.text + (preview.truncated ? '\n\n-- Preview truncated. Download the full file.' : '');
         $('source-name').textContent = job.report.status === 'static_analysis_only' ? 'analysis.vm-map.json' : job.report.external_payload_included === false ? 'recovery.loader.lua' : job.state === 'partial' ? 'recovery.partial.lua' : 'recovery.lua';
@@ -187,20 +259,26 @@ async function poll() {
         if (job.report.external_payload_included === false) notice((job.report.reference_recovery_used ? 'Exact input hash matched the previously reviewed loader; browser AST refinement was not rerun. ' : '') + 'The attached file is a remote loader. Its loader logic was recovered; the external MIDI payload was not fetched or included.');
         else if (job.state === 'partial') notice('This is a partial recovery or static analysis, not a fully deobfuscated working script. Review the activity and output.');
       } else {
-        $('result-title').textContent = job.state === 'cancelled' ? 'Job cancelled. No download published.' : 'Recovery stopped. Your input is unchanged.';
+        $('result-title').textContent = job.state === 'cancelled' ? 'Job cancelled. No download published.' : job.state === 'interrupted' ? 'Worker restarted. Upload again to retry.' : job.state === 'detached' ? 'This run needs its original browser tab.' : 'Recovery stopped. Your input is unchanged.';
         $('result-detail').textContent = 'See the activity log for details.';
       }
-      busy(false); return;
+      if (!$('resume-banner').hidden) {
+        $('resume-title').textContent = job.download ? 'Your finished file is ready.' : job.state === 'detached' ? 'This browser run needs its original tab.' : 'Saved activity restored.';
+        $('resume-detail').textContent = job.download ? 'Review its recovery status below. Your download and report are available again.' : job.state === 'interrupted' ? 'The worker stopped before completion. Upload the input again; no code was automatically rerun.' : job.state === 'detached' ? 'If that tab was closed, its browser worker stopped. Completed downloads are saved; upload again for this unfinished run.' : 'See the activity below for its final status.';
+      }
+      busy(false); void loadHistory(); return;
     }
-    pollTimer = setTimeout(poll, 750);
+    pollTimer = setTimeout(() => poll(epoch), 750);
   } catch (error) {
+    if (epoch !== pollEpoch || id !== state.job) return;
     if (error.status === 404 || error.status === 403) {
       busy(false); clearInterval(clockTimer);
-      notice('This job or session expired, or the worker restarted. Reload the page and upload again.');
+      window.nullStore.clearLatest(); resetDownload();
+      notice('This run expired or its session was cleared. Choose another saved run or upload again.');
       $('result-title').textContent = 'Session unavailable. No new result published.'; return;
     }
     notice(`Connection interrupted: ${error.message}. Retrying this job…`);
-    pollTimer = setTimeout(poll, 2500);
+    pollTimer = setTimeout(() => poll(epoch), 2500);
   }
 }
 $('file').addEventListener('change', event => loadFile(event.target.files[0]));
@@ -217,6 +295,14 @@ document.querySelectorAll('[data-engine]').forEach(button => button.addEventList
 $('mode').addEventListener('change', options); $('log-tab').addEventListener('click', () => view('log')); $('source-tab').addEventListener('click', () => view('source'));
 $('start').addEventListener('click', start);
 $('check-key').addEventListener('click', checkWorkerKey);
+$('remember-key').addEventListener('change', () => { if (!$('remember-key').checked) window.nullStore.forgetKey(); $('key-status').textContent = $('remember-key').checked ? 'Your key will be saved after a successful check or job start. Use only on your own device.' : 'Key will not be remembered.'; });
+$('forget-key').addEventListener('click', () => { window.nullStore.forgetKey(); $('worker-key').value = ''; $('remember-key').checked = false; $('key-status').textContent = 'Saved key removed from this device. Your runs are unchanged.'; });
+$('refresh-history').addEventListener('click', () => loadHistory());
+$('clear-history').addEventListener('click', async () => {
+  if (!confirm('Clear finished saved runs? Download anything you need first. Active server runs will not be cancelled.')) return;
+  try { await api('/api/jobs/clear-history', {}); window.nullStore.clearLatest(); if (!state.busy) { stopPolling(); state.job = null; resetDownload(); $('resume-banner').hidden = true; $('logs').textContent = ''; $('logs').hidden = true; $('empty').hidden = false; $('job-badge').textContent = 'Ready'; $('job-badge').className = 'job-badge'; $('result-title').textContent = 'History cleared.'; $('result-detail').textContent = 'Upload a script to start a new recovery.'; $('stage-label').textContent = 'Waiting for a script'; $('elapsed').textContent = '00:00'; document.querySelectorAll('#stages li').forEach(item => item.classList.remove('done', 'current')); if (!state.data) $('file-info').hidden = true; } await loadHistory(); notice('Finished history cleared. Active server runs were not cancelled.'); } catch (error) { notice(error.message); }
+});
+window.addEventListener('null-storage-error', event => notice(event.detail));
 $('worker-key').addEventListener('input', () => { $('worker-key').removeAttribute('aria-invalid'); $('key-status').textContent = ''; });
 $('cancel').addEventListener('click', async () => { try { await api(`/api/jobs/${state.job}/cancel`, {}); } catch (error) { notice(error.message); } });
 $('copy').addEventListener('click', async () => {
@@ -231,11 +317,15 @@ async function connect() {
     if (state.session.browser_only) {
       $('connection').lastChild.textContent = ' Browser worker ready';
       $('advanced').hidden = true; options();
+      await loadHistory(true); historyTimer = setInterval(loadHistory, 5000);
       return;
     }
+    const savedKey = window.nullStore.savedKey();
+    if (savedKey) { $('worker-key').value = savedKey; $('remember-key').checked = true; $('key-status').textContent = 'Saved key restored on this device. Check it again if the worker key changed.'; }
     if (state.session.owner_key_command) $('key-command').textContent = state.session.owner_key_command;
     $('connection').lastChild.textContent = state.session.dynamic_enabled ? ' Private worker online' : ' Static worker online';
     options();
+    await loadHistory(true); historyTimer = setInterval(loadHistory, 5000);
     window.nullRuntimeLink?.receive(async payload => {
       if (state.busy) throw new Error('A job is running. Wait for it to finish, then import again.');
       const binary = atob(payload.data);

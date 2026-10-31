@@ -1,5 +1,13 @@
 # null • Clyde + Luraph
 
+**Your workspace, remembered:** return to the same private worker address to reconnect
+live progress or download a finished result (24-hour retention, including completed
+files after a worker restart). In **Worker settings**, optionally tick **Remember
+key on this device**, then **Check key**; it saves for seven days in plaintext browser
+storage. Avoid shared devices; **Forget saved key** removes it. Codespaces must stay
+running to process jobs. Pages saves completed Clyde results locally, but cannot run
+with its tab closed. See [return-later details and existing Codespace update steps](WEB.md#return-later-progress-history-and-downloads).
+
 Owner / maintainer: **null**.
 
 The project now has a guided root-level CLI for the existing Luraph **14.7, 14.8, 14.9, and 15** engines: one-time setup, colors, file/folder selection, auto/manual version selection, safe output handling, and live engine logs with elapsed time.

@@ -106,6 +106,54 @@ class WebUnitTests(unittest.TestCase):
             path.write_text('a' * 300)
             self.assertIsNone(web.load_private_key(path))
 
+    def test_running_journal_is_restored_as_interrupted_without_execution(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = web.Manager(folder)
+            job = web.Job('a' * 48 + '.' + 'b' * 64, Path(folder) / ('c' * 32), 'interrupted.lua', b'', {'engine': 'clyde'})
+            job.folder.mkdir(); job.state = 'running'; manager.jobs[job.id] = job
+            manager.persist(job)
+            # Stop idle worker without changing this synthetic crash journal.
+            manager.stopping.set(); manager.worker.join(timeout=2)
+            restored = web.Manager(folder)
+            try:
+                self.assertEqual(restored.jobs[job.id].state, 'interrupted')
+                self.assertIsNone(restored.jobs[job.id].result)
+                self.assertEqual(restored.pending.qsize(), 0)
+            finally:
+                restored.close()
+
+    def test_changed_saved_output_is_never_restored_as_download(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = web.Manager(folder)
+            job = web.Job('a' * 48 + '.' + 'b' * 64, Path(folder) / ('c' * 32), 'saved.lua', b'', {})
+            job.folder.mkdir(); job.result = job.folder / 'result.lua'; job.result.write_bytes(b'return 1')
+            job.state = 'ready'; job.finished = time.time()
+            job.report = {'output_sha256': web.hashlib.sha256(b'return 1').hexdigest()}
+            manager.jobs[job.id] = job; manager.close()
+            if web.os.name != 'nt':
+                self.assertEqual((job.folder / 'job.json').stat().st_mode & 0o777, 0o600)
+                self.assertEqual((Path(folder) / '.session-secret').stat().st_mode & 0o777, 0o600)
+            job.result.write_bytes(b'changed')
+            restored = web.Manager(folder)
+            try:
+                self.assertEqual(restored.jobs[job.id].state, 'failed')
+                self.assertIsNone(restored.jobs[job.id].snapshot()['download'])
+            finally:
+                restored.close()
+
+    def test_expired_journal_is_deleted_on_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = web.Manager(folder)
+            job = web.Job('a' * 48 + '.' + 'b' * 64, Path(folder) / ('c' * 32), 'expired.lua', b'', {})
+            job.folder.mkdir(); job.state = 'failed'; job.finished = time.time() - web.JOB_TTL - 1
+            manager.jobs[job.id] = job; manager.close()
+            restored = web.Manager(folder)
+            try:
+                self.assertNotIn(job.id, restored.jobs)
+                self.assertFalse(job.folder.exists())
+            finally:
+                restored.close()
+
     def test_generated_owner_key_is_private_and_atomic(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'worker.key'
@@ -215,13 +263,61 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(self.request('/api/jobs', payload)[0], 400)
         self.assertEqual(self.request('/api/jobs', [1, 2])[0], 400)
 
+    @unittest.skipUnless(shutil.which('node'), 'Node required for static fixture')
+    def test_persistent_cookie_and_private_history(self):
+        with self.client.open(Request(self.base + '/api/session')) as response:
+            self.assertIn('Max-Age=604800', response.headers['Set-Cookie'])
+            self.assertIn('HttpOnly', response.headers['Set-Cookie'])
+        job = self.manager.submit(self.request_session_id(), 'sample.lua', FIXTURE, {'engine': 'clyde'})
+        self.manager.pending.join()
+        status, body = self.request('/api/jobs')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['jobs'][0]['id'], job.id)
+        self.assertNotIn('owner', body['jobs'][0])
+        self.assertNotIn('logs', body['jobs'][0])
+        stranger = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.request('/api/session', client=stranger)
+        self.assertEqual(self.request('/api/jobs', client=stranger)[1]['jobs'], [])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for durable static result')
+    def test_finished_file_and_cookie_survive_worker_restart(self):
+        job = self.manager.submit(self.request_session_id(), 'saved.lua', FIXTURE, {'engine': 'clyde'})
+        self.manager.pending.join()
+        before = self.request('/api/jobs/' + job.id + '/download')
+        secret = self.server.secret
+        self.server.shutdown(); self.server.server_close(); self.manager.close(); self.thread.join(timeout=3)
+        self.manager = web.Manager(self.temp.name, timeout=10)
+        self.server = web.Server(('127.0.0.1', 0), self.manager)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
+        self.base = 'http://127.0.0.1:' + str(self.server.server_port)
+        self.assertEqual(self.server.secret, secret)
+        self.assertEqual(self.request('/api/jobs/' + job.id + '/download'), before)
+        self.assertEqual(self.request('/api/jobs')[1]['jobs'][0]['id'], job.id)
+        self.assertEqual(self.manager.pending.qsize(), 0)
+
+    def test_clear_history_never_deletes_other_sessions(self):
+        mine = web.Job(self.request_session_id(), Path(self.temp.name) / ('d' * 32), 'mine.lua', b'', {})
+        other = web.Job('other', Path(self.temp.name) / ('e' * 32), 'other.lua', b'', {})
+        mine.folder.mkdir(); other.folder.mkdir()
+        active = web.Job(mine.owner, Path(self.temp.name) / ('f' * 32), 'active.lua', b'', {})
+        active.folder.mkdir(); active.state = 'running'; self.manager.jobs[active.id] = active
+        mine.state = other.state = 'failed'
+        self.manager.jobs[mine.id] = mine; self.manager.jobs[other.id] = other
+        self.assertEqual(self.request('/api/jobs/clear-history', {})[0], 200)
+        self.assertFalse(mine.folder.exists())
+        self.assertTrue(other.folder.exists())
+        self.assertIn(other.id, self.manager.jobs)
+        self.assertIn(active.id, self.manager.jobs)
+        self.assertTrue(active.folder.exists())
+        self.assertFalse(active.cancelled.is_set())
+
     def test_expired_results_are_not_served(self):
         job = web.Job(self.request_session_id(), Path(self.temp.name) / ('b' * 32), 'in.lua', b'', {})
         job.folder.mkdir()
         job.result = job.folder / 'result.lua'
         job.result.write_text('print("expired")')
         job.state = 'ready'
-        job.created = time.time() - 3601
+        job.created = time.time() - web.JOB_TTL - 1
         self.manager.jobs[job.id] = job
         self.assertEqual(self.request('/api/jobs/' + job.id + '/download')[0], 404)
         self.assertFalse(job.folder.exists())

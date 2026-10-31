@@ -1,5 +1,13 @@
 # null • Clyde + Luraph
 
+**Your workspace, remembered:** return to the same private worker address to reconnect
+live progress or download a finished result (24-hour retention, including completed
+files after a worker restart). In **Worker settings**, optionally tick **Remember
+key on this device**, then **Check key**; it saves for seven days in plaintext browser
+storage. Avoid shared devices; **Forget saved key** removes it. Codespaces must stay
+running to process jobs. Pages saves completed Clyde results locally, but cannot run
+with its tab closed. See [return-later details and existing Codespace update steps](WEB.md#return-later-progress-history-and-downloads).
+
 Project owner / maintainer: **null**.
 
 A guided, colored terminal menu for pinned static **Clyde** and the existing Luraph **14.7 / 14.8 / 14.9 / 15** engines. This launcher does not claim to be a new universal decryptor: recovery depends on the input, VM layout, runtime compatibility, and existing engines. Original variable names and every code path cannot always be recovered.
