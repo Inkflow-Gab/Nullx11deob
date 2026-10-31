@@ -49,7 +49,14 @@ def walk(node, fn):
             walk(v, fn)
 
 
+def unwrap(expr):
+    while expr.get("type") == "AstExprGroup":
+        expr = expr["expr"]
+    return expr
+
+
 def local_name(expr):
+    expr = unwrap(expr)
     if expr.get("type") == "AstExprLocal":
         return expr["local"]["name"]
     return None
@@ -80,14 +87,27 @@ def find_dispatchers(root):
             opname = local_name(st["vars"][0])
             if not opname:
                 return
-        v = st["values"][0]
+        v = unwrap(st["values"][0])
         if v["type"] != "AstExprIndexExpr":
             return
         arr, pc = local_name(v["expr"]), local_name(v["index"])
-        if not arr or not pc or body[1]["type"] != "AstStatIf":
+        if not arr or not pc:
             return
-        found.append({"node": n, "op": opname, "arr": arr, "pc": pc, "tree": body[1],
-                      "rest": body[2:]})
+        op_local = st["vars"][0] if st["type"] == "AstStatLocal" else unwrap(st["vars"][0])["local"]
+        tree = body[1]
+        rest = body[2:]
+        if tree["type"] == "AstStatIf" and eval_cond(tree["condition"], opname, 0, op_local["location"]) is None:
+            return
+        if tree["type"] != "AstStatIf":
+            # 15.1 can spell the first dispatch test as `local b = op < K;
+            # if b then ...`. Only accept a pure, resolved boolean prefix.
+            block = {"type": "AstStatBlock", "body": body[1:],
+                     "location": tree["location"].split(" - ")[0] + " - " + body[-1]["location"].split(" - ")[1]}
+            if resolve(block, opname, 0, op_local["location"]) is block:
+                return
+            tree, rest = block, []
+        found.append({"node": n, "op": opname, "op_decl": op_local["location"],
+                      "arr": arr, "pc": pc, "tree": tree, "rest": rest})
 
     walk(root, visit)
     return found
@@ -100,48 +120,80 @@ FLIP = {"CompareLt": "CompareGt", "CompareLe": "CompareGe", "CompareGt": "Compar
         "CompareGe": "CompareLe", "CompareEq": "CompareEq", "CompareNe": "CompareNe"}
 
 
-def eval_cond(cond, var, value):
+def eval_cond(cond, var, value, op_decl=None):
     """Evaluate `var <op> const` for a concrete opcode value; None if not such a test."""
+    cond = unwrap(cond)
     if cond["type"] != "AstExprBinary" or cond["op"] not in OPS:
         return None
-    l, r = cond["left"], cond["right"]
+    l, r = unwrap(cond["left"]), unwrap(cond["right"])
     op = cond["op"]
-    if local_name(l) == var and r["type"] == "AstExprConstantNumber":
+    matches = lambda n: local_name(n) == var and (op_decl is None or n["local"]["location"] == op_decl)
+    if matches(l) and r["type"] == "AstExprConstantNumber":
         return OPS[op](value, r["value"])
-    if local_name(r) == var and l["type"] == "AstExprConstantNumber":
+    if matches(r) and l["type"] == "AstExprConstantNumber":
         return OPS[FLIP[op]](value, l["value"])
     return None
 
 
-def resolve(tree, var, value):
-    """Follow the if-tree for one opcode value and return the handler block."""
+def resolve(tree, var, value, op_decl=None):
+    """Resolve pure dispatch tests, including declaration-bound boolean locals.
+
+    Unknown statements/conditions stop resolution. Never discard a prefix
+    with side effects just to reach an apparent opcode comparison.
+    """
     node = tree
-    while True:
+    booleans = {}
+
+    def condition(expr):
+        expr = unwrap(expr)
+        direct = eval_cond(expr, var, value, op_decl)
+        if direct is not None:
+            return direct
+        if expr.get("type") == "AstExprLocal":
+            return booleans.get(expr["local"]["location"])
+        if expr.get("type") == "AstExprUnary" and expr.get("op") == "Not":
+            result = condition(expr["expr"])
+            return None if result is None else not result
+        return None
+
+    while node is not None:
         if node["type"] == "AstStatBlock":
-            if len(node["body"]) >= 1 and node["body"][0]["type"] == "AstStatIf" \
-                    and eval_cond(node["body"][0]["condition"], var, value) is not None:
-                node = node["body"][0]
+            body = node["body"]
+            i = 0
+            staged = dict(booleans)
+            while i < len(body) and body[i]["type"] == "AstStatLocal":
+                stat = body[i]
+                if len(stat["vars"]) != 1 or len(stat["values"]) != 1:
+                    break
+                result = condition(stat["values"][0])
+                if result is None:
+                    break
+                booleans[stat["vars"][0]["location"]] = result
+                i += 1
+            if i < len(body) and body[i]["type"] == "AstStatIf" and condition(body[i]["condition"]) is not None:
+                # Skipping a dispatch prefix with trailing statements would
+                # silently lose those statements. Preserve such a block.
+                if i + 1 != len(body):
+                    booleans = staged
+                    return node
+                node = body[i]
                 continue
+            booleans = staged
             return node
         if node["type"] == "AstStatIf":
-            r = eval_cond(node["condition"], var, value)
-            if r is None:
+            result = condition(node["condition"])
+            if result is None:
                 return node
-            if r:
-                node = node["thenbody"]
-            else:
-                e = node.get("elsebody")
-                if e is None:
-                    return None
-                node = e
+            node = node["thenbody"] if result else node.get("elsebody")
             continue
         return node
+    return None
 
 
 def handler_map(disp, lines, max_op=256):
     handlers = {}
     for op in range(max_op):
-        blk = resolve(disp["tree"], disp["op"], op)
+        blk = resolve(disp["tree"], disp["op"], op, disp.get("op_decl"))
         if blk is None:
             continue
         key = blk["location"]
@@ -272,8 +324,10 @@ def closure_entries(root):
             if n.get("type") == "AstExprFunction":
                 stack = stack + [n]
             if n.get("type") == "AstStatWhile" and any(n is d for d in disp_nodes):
-                inner = next(f for f in reversed(stack) if f.get("vararg") and not f["args"])
-                outer = next(f for f in reversed(stack) if len(f["args"]) >= 2)
+                inner = next((f for f in reversed(stack) if f.get("vararg") and not f["args"]), None)
+                outer = next((f for f in reversed(stack) if len(f["args"]) >= 2), None)
+                if inner is None or outer is None or not inner["body"]["body"]:
+                    return
                 l1, c1, _, _ = loc(inner["body"]["body"][0])
                 # keyed by the proto parameter: parameter 1 is not always the
                 # proto (function(g, upvals, proto, ...)), and an upvalue list
@@ -304,8 +358,8 @@ def closure_makers(root):
             if t and t.startswith("AstStat"):
                 stmts = stmts + [(n, len(stack))]
             if t == "AstStatWhile" and any(n is d for d in disp_nodes):
-                oi = max(i for i, f in enumerate(stack) if len(f["args"]) >= 2)
-                if oi + 1 < len(stack):
+                oi = max((i for i, f in enumerate(stack) if len(f["args"]) >= 2), default=-1)
+                if oi >= 0 and oi + 1 < len(stack):
                     clo = stack[oi + 1]
                     st = [s for s, d in stmts if d == oi + 1]
                     st = st[-1] if st else None
@@ -345,8 +399,8 @@ def maker_info(root):
             if t and t.startswith("AstStat"):
                 stmts = stmts + [(n, len(stack))]
             if t == "AstStatWhile" and any(n is d for d in disp_nodes):
-                oi = max(i for i, f in enumerate(stack) if len(f["args"]) >= 2)
-                if oi + 1 < len(stack):
+                oi = max((i for i, f in enumerate(stack) if len(f["args"]) >= 2), default=-1)
+                if oi >= 0 and oi + 1 < len(stack):
                     clo = stack[oi + 1]
                     st = [s for s, d in stmts if d == oi + 1]
                     st = st[-1] if st else None

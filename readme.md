@@ -34,6 +34,16 @@ Then use `python3 start.py` again. All existing CLI file/output/version options 
 
 Luraph **15.1 is recognized but experimental** with the current v15 compatibility backend; recognizing a banner is not full support. The supplied v15.1 file did not fully decode even with the independently tested public candidate. See the [15.1 research report](output/recovered/research-15.1.md).
 
+## Native 15.1 development
+
+An original static VM-discovery front-end is now available. It detects curried factories, declaration-accurate free bindings, and opcode regions without executing the inspected Lua:
+
+```bash
+python3 start.py output/recovered/steal.partial-decoded.lua --inspect-vm -o output/local/steal.vm-map.json
+```
+
+This is the first native front-end stage, **not a full 15.1 devirtualizer**. See [implemented behavior, actual sample results, tests, and remaining work](output/recovered/native-15.1.md).
+
 ## Mobile / Android
 
 In Termux, use `python start.py` after installing the required packages. Termux and Ubuntu-on-phone instructions, storage permissions, one-job native builds, and verification limitations are documented in the [mobile setup section](read.md#android--mobile-termux-and-ubuntu). Keep the checkout in private home storage, not `/sdcard`.

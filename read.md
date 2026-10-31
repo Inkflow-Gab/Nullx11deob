@@ -305,6 +305,24 @@ null • Luraph deobfuscator
 
 Type `q`, `quit`, or `back` at prompts to cancel/go back. Ctrl+C while running cancels the job and returns to the menu. Ctrl+C in command mode exits with status 130. Closing standard input exits the menu.
 
+## Native 15.1 development: static VM discovery
+
+The new native front-end finds curried VM factories, exact captured-variable declarations, and opcode-handler regions. It does **not** execute the inspected source. This is the first stage of native 15.1 support, **not full devirtualization**: prototype capture and semantic lifting remain unfinished.
+
+Inspect the published decoded chunk and write a **new JSON report**:
+
+```bash
+python3 start.py output/recovered/steal.partial-decoded.lua --inspect-vm -o output/local/steal.vm-map.json
+```
+
+On Termux:
+
+```bash
+python start.py output/recovered/steal.partial-decoded.lua --inspect-vm -o output/local/steal.vm-map.json
+```
+
+Use an existing decoded VM source file, not an encrypted outer loader. Existing report files are not overwritten. See [native 15.1 progress and remaining stages](output/recovered/native-15.1.md) and the [sample VM map](output/recovered/steal.vm-map.json). The sample remains only partially decoded.
+
 ## Direct commands (without the menu)
 
 The following examples use the Linux/macOS venv interpreter. On Windows replace `.venv/bin/python` with `.venv\Scripts\python.exe`. Replace example input/output paths with your own. Quote paths containing spaces.

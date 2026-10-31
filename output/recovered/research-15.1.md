@@ -28,6 +28,8 @@ Static comparison on the same decoded 948,746-byte chunk found:
 
 This supports a real model/instrumentation mismatch in the existing engine. It does **not** show that the version number is the only issue, nor that the candidate correctly reconstructs all control flow.
 
+**Later correction:** the candidate's ninth detected loop was inspected directly and is an ordinary application merge loop, not an additional VM dispatcher. Our new native discovery stage maps the eight real loops to two curried factories; see [`native-15.1.md`](native-15.1.md). The earlier recognition count remains a historical raw measurement, not evidence of a ninth VM.
+
 ## Retry A: candidate source + existing source-built runtime
 
 - The candidate was kept in an ignored research directory; none of its downloaded native binaries was executed.

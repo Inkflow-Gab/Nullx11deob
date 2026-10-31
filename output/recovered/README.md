@@ -21,6 +21,10 @@ The latest focused investigation is recorded in [`steal.blockers.json`](steal.bl
 
 `StealB` has clean reconstruction counters and no obvious unresolved-marker/`nil`-call artifacts in the follow-up scan. That still does **not** prove full behavioral equivalence or include its externally loaded libraries.
 
+## Native 15.1 engine development
+
+See [`native-15.1.md`](native-15.1.md) for the new native static front-end, tested against the sample. It correctly maps eight dispatch loops to two curried factories and resolves 34 exact free bindings per VM closure. The source-hashed [`steal.vm-map.json`](steal.vm-map.json) is **analysis data, not recovered executable Lua**. The original attachment was rerun with the updated mapper; prototype capture still failed, so no replacement full decode is claimed.
+
 ## Credential handling
 
 One embedded Discord webhook URL/token in `StealB` was replaced with:

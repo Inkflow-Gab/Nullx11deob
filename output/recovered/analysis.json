@@ -87,5 +87,23 @@
     },
     "published_lua_artifacts_changed": false,
     "experimental_patch_installed_in_main_engine": false
+  },
+  "native_15_1_development": {
+    "stage": "static_vm_discovery",
+    "report": "native-15.1.md",
+    "vm_map": "steal.vm-map.json",
+    "map_source": "steal.partial-decoded.lua",
+    "map_source_sha256": "c198d8df2672e4f000c748818d6f624daadb593bf6ee3583841ab9d0d08ccdba",
+    "dispatchers": 8,
+    "curried_factories": 2,
+    "free_bindings_per_vm": [
+      34,
+      34
+    ],
+    "full_recovery_achieved": false,
+    "sample_rerun_captured_prototypes": 0,
+    "sample_rerun_status": "watchdog_abort_partial_trace_only",
+    "published_lua_artifacts_changed": false,
+    "tests_passed": 116
   }
 }

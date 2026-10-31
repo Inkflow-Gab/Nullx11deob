@@ -551,6 +551,38 @@ def run_job(ui, source, destination, engine, *, trace_only=False, timeout=600, o
     return destination
 
 
+def inspect_vm(ui, source, output=None, *, timeout=600):
+    """Run the native static front-end in isolation; never execute the input."""
+    validate_input(source)
+    if not find_ast():
+        raise RuntimeError("Luau AST tool missing. Run python start.py --setup first.")
+    destination = clean_path(output) if output else source.with_name(script_stem(source) + ".vm-map.json")
+    if destination.is_dir():
+        destination = destination / (script_stem(source) + ".vm-map.json")
+    if destination.resolve() == source.resolve():
+        raise ValueError("VM map must not replace the input.")
+    if destination.suffix.lower() != ".json":
+        raise ValueError("Static VM inspection requires a .json output, not recovered Lua.")
+    if destination.exists():
+        raise ValueError("VM map already exists; choose a new output path.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    ui.say("Static 15.1 VM discovery: source will NOT be executed. This is not full devirtualization.", "yellow")
+    with tempfile.TemporaryDirectory(prefix=".null-deob-", dir=destination.parent) as work:
+        staged = Path(work) / "map.json"
+        command = [sys.executable, "-B", str(ENGINE_ROOT / "obfuscators/luraph_v15/inspect15_1.py"),
+                   str(source), "-o", str(staged)]
+        code = stream_process(command, ui, cwd=ENGINE_ROOT, timeout=timeout)
+        if code:
+            raise RuntimeError(f"VM discovery failed (exit {code}); no output published.")
+        report = json.loads(staged.read_text(encoding="utf-8"))
+        if report.get("stage") != "static_vm_discovery" or report.get("full_devirtualization") is not False:
+            raise RuntimeError("Invalid static VM report; no output published.")
+        publish_new_result(staged, destination)
+    ui.say(f"Saved VM map: {destination} — {report['dispatcher_count']} dispatchers, "
+           f"{report['curried_factory_count']} curried factories. Semantic lifting is not complete.", "yellow")
+    return destination
+
+
 def interactive(ui, args):
     ui.say("null • Luraph deobfuscator", "bold cyan")
     ui.say("Only analyze code you own or are authorized to inspect. q = back; Ctrl+C = cancel.")
@@ -602,6 +634,7 @@ def parser():
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--setup", action="store_true", help="create .venv, install Rich, prepare Luau")
     mode.add_argument("--doctor", action="store_true", help="check dependencies and engine files")
+    mode.add_argument("--inspect-vm", action="store_true", help="static 15.1 VM/closure discovery to JSON; never executes input")
     ap.add_argument("--skip-runtime", action="store_true", help="with --setup, install Python dependencies only")
     ap.add_argument("--build-runtime", action="store_true", help="with --setup, build patched Luau even if already present")
     ap.add_argument("--jobs", type=int, help="native compiler jobs for setup/menu setup (mobile default 1, otherwise 2)")
@@ -636,6 +669,8 @@ def main(argv=None):
         ap.error("choose either --skip-runtime or --build-runtime")
     if args.input and (args.setup or args.doctor):
         ap.error("do not combine an input file with --setup/--doctor")
+    if args.inspect_vm and (not args.input or args.trace_only or args.force or args.engine != "auto"):
+        ap.error("--inspect-vm needs an input and a new JSON output; do not combine it with --trace-only/--force/--engine")
     ui = UI(args.no_color)
     try:
         if args.setup:
@@ -648,6 +683,9 @@ def main(argv=None):
                 ap.error("job options require an input; the menu asks for its own settings")
             return interactive(ui, args)
         source = validate_input(clean_path(args.input))
+        if args.inspect_vm:
+            inspect_vm(ui, source, args.output, timeout=args.job_timeout)
+            return 0
         engine = args.engine
         if engine == "auto":
             engine, reason = detect_engine(source)
