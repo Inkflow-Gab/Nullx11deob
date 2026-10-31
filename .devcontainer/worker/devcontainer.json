@@ -1,0 +1,30 @@
+{
+  "name": "null · private engine worker",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
+  },
+  "postCreateCommand": "python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt cmake && .venv/bin/python -B start.py --setup --jobs 2",
+  "postStartCommand": "NULL_WEB_DYNAMIC=1 python3 .devcontainer/launch.py",
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "null · private engine worker",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "remoteEnv": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "WEB.md"
+      ]
+    }
+  }
+}

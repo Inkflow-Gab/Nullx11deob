@@ -20,7 +20,9 @@ runs static Clyde without a backend or uploads; Luraph still needs a private wor
 
 **Website: https://inkflow-gab.github.io/Nullx11deob/**
 
-**Run Luraph from the website:** select Luraph, choose version/mode, and use the
+**[Create our private worker](https://github.com/codespaces/new?repo=1440370177&ref=arena%2F247512c5-nullx11deob&devcontainer_path=.devcontainer%2Fworker%2Fdevcontainer.json)** — the dedicated template automatically installs and starts the full engine on private port 8080. Read `output/private-worker-8080.key` in its terminal and enter that key only in the worker tab. The current connection cannot create a Codespace directly; use this link or reconnect GitHub with Codespaces access.
+
+**Run Luraph from an existing ordinary Codespace:** select Luraph, choose version/mode, and use the
 full-runner panel. In your private Codespace, run:
 
 ```bash

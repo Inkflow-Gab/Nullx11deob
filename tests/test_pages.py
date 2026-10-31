@@ -26,6 +26,16 @@ class PagesTests(unittest.TestCase):
         self.assertEqual((ROOT / 'docs/runtime-link.js').read_text(), (ROOT / 'web/runtime-link.js').read_text())
         self.assertIn('runtime-link.js', (ROOT / 'docs/index.html').read_text())
 
+    def test_dedicated_worker_template_uses_explicit_private_startup(self):
+        worker = json.loads((ROOT / '.devcontainer/worker/devcontainer.json').read_text())
+        regular = json.loads((ROOT / '.devcontainer/devcontainer.json').read_text())
+        self.assertEqual(worker['postCreateCommand'], regular['postCreateCommand'])
+        self.assertEqual(worker['postStartCommand'], 'NULL_WEB_DYNAMIC=1 python3 .devcontainer/launch.py')
+        self.assertNotIn('NULL_WEB_DYNAMIC=1', regular['postStartCommand'])
+        self.assertEqual(worker['forwardPorts'], [8080])
+        self.assertNotIn('repositories', worker.get('customizations', {}).get('codespaces', {}))
+        self.assertIn('devcontainer_path=.devcontainer%2Fworker%2Fdevcontainer.json', (ROOT / 'docs/index.html').read_text())
+
     def test_browser_bundle_contains_closed_relative_module_graph(self):
         source = build_pages.bundle()
         self.assertIn('const process = {env: Object.freeze({})}', source)

@@ -29,12 +29,42 @@ not originally create Pages (403); the owner enabled it. Pushes now trigger the
 existing deployment. New versions are available when GitHub finishes that build.
 These changes are still on this branch, not merged to `main`.
 
+### Dedicated null worker template
+
+[Create the private null worker](https://github.com/codespaces/new?repo=1440370177&ref=arena%2F247512c5-nullx11deob&devcontainer_path=.devcontainer%2Fworker%2Fdevcontainer.json)
+
+Choose the **null · private engine worker** configuration if GitHub shows a template
+selector. This is `.devcontainer/worker/devcontainer.json`: setup installs the
+existing Python/Node/native tools, then explicitly starts the owner-key-protected
+engine automatically on **8080**. The ordinary workspace template still defaults
+to safe mode. No extra repository permissions are requested by the worker template.
+
+The Arena GitHub connection could list Codespaces but was denied machine access
+(403) and Codespace creation for this repository. No Codespace was created by that
+attempt. The owner can use the link above, or reconnect GitHub in Arena with
+Codespaces permissions before an agent retries. Do not supply tokens/passwords
+in chat. GitHub's own billing/quota/policy checks still apply; this is not free
+permanent hosting, and a Codespace may stop when idle.
+
+After GitHub finishes setup, open private port **8080**, then read the owner key
+inside that Codespace (not here, and not on Pages):
+
+```bash
+cat output/private-worker-8080.key
+```
+
+Paste the forwarded HTTPS URL into Pages and the key only into the private worker
+tab. File import never starts a job automatically. Startup errors are recorded in
+`output/web-launcher.log`. This dedicated template has been checked locally as
+configuration but could not be provisioned remotely due to the permission denial.
+
 ### Run the full deobfuscator from Pages
 
 1. Select **Luraph** (or upload a bannered file for auto-detection), then choose
    the version and **Deobfuscate / Behavior trace / Static VM map** mode.
-2. Open/create your own Codespace using the panel link. Its first setup installs
-   Python/Node and builds the trusted Luau tools. Keep forwarded ports **Private**.
+2. Use the dedicated worker link above or in the panel for automatic startup on
+   8080. The following 8081 commands are an alternative for an existing ordinary
+   workspace, not required for the dedicated worker. Keep ports **Private**.
 3. In its terminal, start the full runner with one command:
 
 ```bash
