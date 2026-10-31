@@ -4,6 +4,48 @@ Project owner / maintainer: **null**.
 
 A guided, colored terminal menu for the existing Luraph **14.7 / 14.8 / 14.9 / 15** engines. This launcher does not claim to be a new universal decryptor: recovery depends on the input, VM layout, runtime compatibility, and existing engines. Original variable names and every code path cannot always be recovered.
 
+## Easiest daily command
+
+After the OS prerequisites and clone steps below, use the same command for first setup and every later session:
+
+```bash
+python3 start.py
+```
+
+On **Termux**, use:
+
+```bash
+python start.py
+```
+
+On **Windows**, use:
+
+```powershell
+py -3 start.py
+```
+
+First use asks permission to create the local environment, install Rich, and prepare both native tools, then opens the menu. Later runs automatically select `.venv`; no activation is needed. Errors include platform-specific prerequisite instructions. The starter uses the existing, validated engine—not downloaded experimental deobfuscators.
+
+For explicit setup/repair without opening the menu:
+
+```bash
+python3 start.py --setup --jobs 1
+```
+
+For unattended first setup followed by the menu, explicitly permit installation:
+
+```bash
+python3 start.py --yes --jobs 1
+```
+
+Without `--yes`, non-interactive input will not silently trigger a download. Existing `cli.py` commands remain supported; job options can also be forwarded through `start.py`:
+
+```bash
+python3 start.py "protected.lua" -o "results/clean.lua"
+```
+
+**Compatibility:** Luraph 15.1 banners are recognized, but the current v15 backend is an experimental compatibility route, not verified full 15.1 support. The uploaded `steal.lua.txt` remains partially recovered after two additional tests of a public 15.1 candidate. [Read the actual research and rejection results](output/recovered/research-15.1.md).
+
 ## What’s new
 
 - **One setup command:** creates a local `.venv`, installs Rich for colors/live status, and builds the pinned, patched Luau runtime if no usable runtime exists. No global pip install.
@@ -367,7 +409,7 @@ The root `deobfuscate.py` is a **separate LuaObfuscator.com/Ferib engine**, not 
 
 ## Tests
 
-No third-party test runner is needed. Tests cover selection (including `.lua.txt` attachments), detection, engine routing, output races, shared-storage copy fallback, native-tool execution probes, syntax rejection, process-tree cancellation, mobile build configuration, setup behavior, and menu handling. Native integration tests additionally run all four frontends and the bundled v15 protected sample when native tools are installed; they do not claim complete recovery for every protected sample.
+No third-party test runner is needed. Tests cover selection (including `.lua.txt` attachments), detection, engine routing, output races, shared-storage copy fallback, native-tool execution probes, syntax rejection, process-tree cancellation, mobile build configuration, setup behavior, and menu handling. Starter tests additionally check first-run permission, environment selection, argument forwarding and setup failure handling. Native integration tests additionally run all four frontends and the bundled v15 protected sample when native tools are installed; they do not claim complete recovery for every protected sample.
 
 ```bash
 python3 -m unittest discover -s tests -v

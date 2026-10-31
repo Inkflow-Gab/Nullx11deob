@@ -137,7 +137,9 @@ def detect_engine(path):
         version = match.group(1)
         for engine in ENGINES[1:]:
             if version == engine or version.startswith(engine + "."):
-                return engine, f"header v{version}"
+                warning = ("; experimental v15 compatibility — full v15.1 recovery is not verified"
+                           if version.startswith("15.") and not version.startswith("15.0") else "")
+                return engine, f"header v{version}{warning}"
         return None, f"unsupported header v{version}; do not assume a compatible engine"
     if head.lstrip().startswith("local init = (function(...") and "return({" in head:
         return "14.8", "v14.8 layout heuristic (not a guarantee)"
@@ -257,7 +259,8 @@ def doctor(ui):
         checks.append(ENGINE_ROOT / "obfuscators" / ("luraph_v" + version.replace(".", "_")) / "__init__.py")
     missing = [str(p) for p in checks if not p.is_file()]
     ui.say("Engine files: " + (", ".join(missing) if missing else "all present"))
-    ui.say("Native build tools: " + ", ".join(f"{x}={'yes' if shutil.which(x) else 'no'}"
+    build_path = str(ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin")) + os.pathsep + os.environ.get("PATH", "")
+    ui.say("Native build tools: " + ", ".join(f"{x}={'yes' if shutil.which(x, path=build_path) else 'no'}"
                                                for x in ("git", "cmake", "g++", "clang++", "cl")))
     ui.say("Bundled Windows runtime is stock; patched builds improve Vector3 compatibility.", "yellow")
     failures = validate_native_tools() if runtime and ast and not missing else []
@@ -296,9 +299,11 @@ def stop_child(process):
         process.wait()
 
 
-def stream_process(command, ui, *, cwd=ROOT, timeout=600):
+def stream_process(command, ui, *, cwd=ROOT, timeout=600, extra_env=None):
     """Stream merged unbuffered logs and keep a heartbeat when engines are quiet."""
     env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")
+    if extra_env:
+        env.update(extra_env)
     process = subprocess.Popen([str(x) for x in command], cwd=cwd, env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                text=True, encoding="utf-8", errors="replace",
@@ -349,6 +354,16 @@ def stream_process(command, ui, *, cwd=ROOT, timeout=600):
         process.stdout.close()
 
 
+def setup_prerequisite_hint():
+    if "com.termux" in sys.executable or hasattr(sys, "getandroidapilevel") or sys.platform == "android":
+        return "Termux: pkg install python python-pip git clang cmake ninja make"
+    if sys.platform == "darwin":
+        return "macOS: xcode-select --install; then install Git and CMake (for example brew install git cmake)."
+    if os.name == "nt":
+        return "Windows: install Git, CMake and C++ Build Tools; run from a Developer PowerShell."
+    return "Ubuntu/Debian: sudo apt-get install python3-venv python3-pip git cmake build-essential ninja-build (omit sudo in a root proot shell)."
+
+
 def setup(ui, skip_runtime=False, build_runtime=False, jobs=None):
     """One command creates a local environment and prepares native prerequisites."""
     target = ROOT / ".venv"
@@ -369,17 +384,21 @@ def setup(ui, skip_runtime=False, build_runtime=False, jobs=None):
     elif find_runtime() and find_ast() and not build_runtime and not validate_native_tools():
         ui.say(f"[3/3] Using Luau: {find_runtime()}", "green")
     else:
-        required = [tool for tool in ("git", "cmake") if not shutil.which(tool)]
-        if not any(shutil.which(tool) for tool in ("g++", "clang++", "cl")):
+        # Also find tools installed into this venv without requiring shell
+        # activation (for example `python -m pip install cmake`).
+        tool_path = str(python.parent) + os.pathsep + os.environ.get("PATH", "")
+        required = [tool for tool in ("git", "cmake") if not shutil.which(tool, path=tool_path)]
+        if not any(shutil.which(tool, path=tool_path) for tool in ("g++", "clang++", "cl")):
             required.append("a C++ compiler (GCC, Clang or MSVC developer prompt)")
         if required:
             raise RuntimeError("Install native build prerequisites: " + ", ".join(required)
-                               + ". Then rerun --setup. See read.md for OS instructions.")
+                               + ".\n" + setup_prerequisite_hint()
+                               + "\nThen rerun python start.py. See read.md for OS instructions.")
         ui.say("[3/3] Building pinned, patched Luau; first setup can take several minutes…", "cyan")
         command = [python, ENGINE_ROOT / "build_luau.py", "--portable"]
         if jobs is not None:
             command.extend(["--jobs", str(jobs)])
-        if stream_process(command, ui, timeout=1800):
+        if stream_process(command, ui, timeout=1800, extra_env={"PATH": tool_path}):
             raise RuntimeError("Luau build failed; see the build log above and read.md.")
         if not find_runtime() or not find_ast():
             raise RuntimeError("Build finished but executable Luau / Luau AST tools are missing.")
@@ -387,7 +406,10 @@ def setup(ui, skip_runtime=False, build_runtime=False, jobs=None):
         failures = validate_native_tools()
         if failures:
             raise RuntimeError("Native tool validation failed: " + "; ".join(failures))
-    ui.say("Setup complete. Start the menu with:", "bold green")
+    easy_python = "py -3" if os.name == "nt" else ("python" if is_mobile_environment() else "python3")
+    ui.say("Setup complete.", "bold green")
+    ui.say(f"Easy start from the repository folder: {easy_python} start.py", "cyan")
+    ui.say("Or use the environment directly:")
     command = f'"{python}" "{ROOT / "cli.py"}"'
     if os.name == "nt":
         ui.say("PowerShell:")
@@ -551,7 +573,7 @@ def interactive(ui, args):
             elif choice == "2":
                 if ui.confirm("Create .venv, install Rich, and build Luau if missing? Requires internet"):
                     setup(ui, jobs=args.jobs)
-                    ui.say("Restart using the printed .venv command to enable Rich.")
+                    ui.say("Restart with start.py to select .venv automatically and enable Rich.")
             elif choice == "3":
                 doctor(ui)
             elif choice == "4":
@@ -588,7 +610,7 @@ def parser():
     return ap
 
 
-def main(argv=None):
+def configure_output_streams():
     # Legacy Windows shells / redirected ASCII logs must not crash on UI
     # bullets, arrows, or Unicode filenames. Keep the user's encoding and
     # escape only characters that it cannot represent.
@@ -598,6 +620,10 @@ def main(argv=None):
                 stream.reconfigure(errors="backslashreplace")
             except (OSError, ValueError):
                 pass
+
+
+def main(argv=None):
+    configure_output_streams()
     ap = parser()
     args = ap.parse_args(argv)
     if args.jobs is not None and args.jobs < 1:

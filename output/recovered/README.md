@@ -13,6 +13,12 @@ These are analysis artifacts from the two user-supplied attachments, not trusted
 
 The first v15.1 attempt produced only comments. That file is deliberately **not** presented here as `steal.deobfuscated.lua`; the useful extracted chunk is labeled `partial-decoded` instead. The v15 engine was also corrected to fall back to its partial behavior trace rather than claiming a zero-prototype lift is useful devirtualization.
 
+## Follow-up: public v15.1 tools and StealB completeness
+
+See [`research-15.1.md`](research-15.1.md). A source-reviewed public v15.1 candidate was tested with two separately source-built runtimes. It got further than the current engine, but neither attempt produced correct full recovery. Broken output was deliberately not promoted to a successful decode.
+
+`StealB` has clean reconstruction counters and no obvious unresolved-marker/`nil`-call artifacts in the follow-up scan. That still does **not** prove full behavioral equivalence or include its externally loaded libraries.
+
 ## Credential handling
 
 One embedded Discord webhook URL/token in `StealB` was replaced with:

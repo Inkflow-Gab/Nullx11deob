@@ -6,31 +6,37 @@ The project now has a guided root-level CLI for the existing Luraph **14.7, 14.8
 
 **[Open read.md for the complete setup guide, menu walkthrough, individually copyable Python commands, troubleshooting, and limitations.](read.md)**
 
-## Quick start — Linux / macOS
+## Simplest start — Linux / macOS / Ubuntu
 
-Python 3.10+ is required. Native Luau builds require Git, CMake, and a C++ compiler; see [read.md](read.md) for OS prerequisites.
-
-```bash
-python3 cli.py --setup
-```
+After installing the OS prerequisites in [read.md](read.md), run one command:
 
 ```bash
-.venv/bin/python cli.py
+python3 start.py
 ```
 
-## Quick start — Windows
+On first use it asks before installing dependencies/building Luau, then opens the menu. On later runs it selects `.venv` automatically—no activation command is needed. If a compiler/CMake package is missing, setup prints a platform-specific package-install hint.
 
-```powershell
-py -3 cli.py --setup
-```
+## Simplest start — Windows
 
 ```powershell
-.venv\Scripts\python.exe cli.py
+py -3 start.py
 ```
+
+## Explicit setup / repair
+
+```bash
+python3 start.py --setup --jobs 1
+```
+
+Then use `python3 start.py` again. All existing CLI file/output/version options can also be passed to `start.py`.
+
+## Version limits
+
+Luraph **15.1 is recognized but experimental** with the current v15 compatibility backend; recognizing a banner is not full support. The supplied v15.1 file did not fully decode even with the independently tested public candidate. See the [15.1 research report](output/recovered/research-15.1.md).
 
 ## Mobile / Android
 
-Termux and Ubuntu-on-phone instructions, storage permissions, one-job native builds, and verification limitations are documented in the [mobile setup section](read.md#android--mobile-termux-and-ubuntu). Keep the checkout in private home storage, not `/sdcard`.
+In Termux, use `python start.py` after installing the required packages. Termux and Ubuntu-on-phone instructions, storage permissions, one-job native builds, and verification limitations are documented in the [mobile setup section](read.md#android--mobile-termux-and-ubuntu). Keep the checkout in private home storage, not `/sdcard`.
 
 ## Requested recovery artifacts
 

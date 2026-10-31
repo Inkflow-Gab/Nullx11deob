@@ -39,5 +39,31 @@
       "behavioral_equivalence_verified": false,
       "runtime_limitations": "endless-loop watchdog; zero captured VM prototypes; remaining VM wrapper in extracted chunk"
     }
-  ]
+  ],
+  "followup_research": {
+    "candidate_repository": "https://github.com/ludicious-claw/Deobfuscator-Luraph-V15-1",
+    "candidate_commit": "d78c335d96cce5ae3551c88e4a9857a40ab2c62b",
+    "full_15_1_recovery_achieved": false,
+    "experimental_sources_installed_in_main_engine": false,
+    "attempts": [
+      {
+        "runtime": "existing source-built Luau 0.739",
+        "functions": 36,
+        "unlifted_blocks": 11,
+        "nil_calls_in_debug_lift": 150,
+        "debug_lift_syntax_valid": true,
+        "selected_final_trace_syntax_valid": false,
+        "accepted_as_full_recovery": false
+      },
+      {
+        "runtime": "separately source-built candidate compatibility runtime",
+        "functions": 36,
+        "unlifted_blocks": 12,
+        "nil_calls_in_final_output": 55,
+        "selected_final_output_syntax_valid": false,
+        "accepted_as_full_recovery": false
+      }
+    ],
+    "report": "research-15.1.md"
+  }
 }
