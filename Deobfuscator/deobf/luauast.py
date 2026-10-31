@@ -162,8 +162,15 @@ class Printer:
         self.lines.append(self.ind * depth + text)
 
     def block(self, b, depth):
+        block_start = len(self.lines)
         for s in b["body"]:
+            start = len(self.lines)
             self.stat(s, depth)
+            # Newlines do not delimit Lua statements. A parenthesized call
+            # or assignment could otherwise bind to the previous expression.
+            # Terminate the previous statement, not the start of the block.
+            if start > block_start and len(self.lines) > start and self.lines[start].lstrip().startswith("("):
+                self.lines[start - 1] += ";"
 
     def stat(self, s, depth):
         t = s["type"]

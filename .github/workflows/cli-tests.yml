@@ -1,0 +1,45 @@
+name: CLI reliability
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install presentation dependency
+        run: python -m pip install -r requirements.txt
+      - name: Run launcher and available native tests
+        run: python -B -m unittest discover -s tests -v
+
+  native-linux:
+    name: Full Linux setup and native integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build both native tools through one-command setup
+        run: python cli.py --setup
+      - name: Check actual tool execution
+        run: .venv/bin/python cli.py --doctor
+      - name: Run all tests, including protected sample recovery
+        run: .venv/bin/python -B -m unittest discover -s tests -v

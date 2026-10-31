@@ -1,0 +1,22 @@
+# Local environments / Python caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Locally built native tools (existing tracked Windows tools are unchanged)
+Deobfuscator/deobf/bin/luau
+Deobfuscator/deobf/bin/luau-ast
+Deobfuscator/deobf/bin/luau-compile
+Deobfuscator/deobf/bin/luau-analyze
+
+# Runtime output / temporary artifacts
+.null-deob-*/
+.*_work/
+/output/*
+!/output/recovered/
+/output/recovered/*
+!/output/recovered/*.lua
+!/output/recovered/*.md
+!/output/recovered/*.json
+*.path2d
