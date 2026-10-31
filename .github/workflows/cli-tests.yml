@@ -27,7 +27,9 @@ jobs:
         with:
           node-version: '22'
       - name: Check vanilla web JavaScript and static adapter
-        run: node --check web/app.js && node --check clyde_cli.js
+        run: node --check web/app.js && node --check clyde_cli.js && node --check web/browser-api.js && node --check docs/clyde-worker.js
+      - name: Check committed GitHub Pages build
+        run: python -B tools/build_pages.py --check
       - name: Install presentation dependency
         run: python -m pip install -r requirements.txt
       - name: Run launcher and available native tests

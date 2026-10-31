@@ -1,7 +1,80 @@
 # null — web recovery workspace
 
-Minimal HTML, CSS, and vanilla JavaScript, backed by a Python standard-library
-server. No frontend build, CDN, analytics, npm install, or third-party upload API.
+Minimal HTML, CSS, and vanilla JavaScript in two editions: browser-only GitHub
+Pages for static Clyde, and a Python server for private Luraph/Clyde work.
+No CDN, analytics, npm runtime dependency, or third-party upload API.
+
+## GitHub Pages — github.io
+
+Expected site URL after enabling hosting:
+**https://inkflow-gab.github.io/Nullx11deob/**
+
+The ready-to-publish site is committed under `docs/`. It runs the pinned Clyde
+engine in a dedicated browser Web Worker, without Node, Python, backend requests,
+or uploading your input. It provides automatic signature detection, actual worker
+logs, a 180-second timeout, cancellation, source preview, local file/report downloads,
+and the same responsive light/dark interface.
+
+### One-time activation
+
+The current GitHub connection returned **403 Resource not accessible by integration**
+when asked to enable Pages. Hosting could not be activated automatically. Either
+reconnect GitHub in Arena with Pages administration permission, or use the repository
+settings directly (no token/password is needed in chat):
+
+1. Open [Settings → Pages](https://github.com/Inkflow-Gab/Nullx11deob/settings/pages).
+2. Set **Source → Deploy from a branch**.
+3. Choose branch **`arena/247512c5-nullx11deob`**, folder **`/docs`**.
+4. Click **Save**, then wait for GitHub's Pages deployment to finish. GitHub will
+   show the live URL. Until enabled and deployed, that URL can return 404.
+
+Use this branch, not `main`: these changes are still in the open pull request.
+The `.nojekyll` file makes this a plain static deployment. No Codespace needs to
+be started for Clyde. Later pushes to this branch's `docs/` redeploy automatically.
+
+### Browser edition limitations
+
+- **Luraph cannot run on Pages.** Detection/version display is available, but its
+  recovery button is disabled. Use **Launch** for the private Codespaces worker.
+- No browser Luau AST tool is bundled: syntax and behavior are **not checked** in
+  the browser. Unsupported/peeled VM layers are labeled partial.
+- For the exact RoMidi input hash, the worker can return the previously reviewed,
+  hash-verified loader already published in this repository. The log and report
+  explicitly mark it as a reference recovery, not a new browser AST refinement.
+  The remote MIDI payload is still not fetched or included.
+- Input and current results stay in the tab. Closing/reloading discards them;
+  downloaded files remain wherever your browser saves them. The worker never
+  executes uploaded Lua. GitHub still receives ordinary requests for public
+  site assets and may retain standard hosting access logs.
+- File limit 8 MiB, output limit 16 MiB; only the current result is retained.
+  A large input can exceed browser memory despite these bounds. Cancellation
+  terminates the worker. Logs have the same 256 KB / 4,000-line cap.
+
+### Rebuild after editing source
+
+The generated worker is a closed CommonJS module graph compiled as ordinary
+functions: no `eval`, no dynamic uploaded JavaScript/Lua execution, no npm build
+download. Clyde copyright/license comments are retained, with the full MIT notice
+in `docs/Clyde-LICENSE.txt`. Only the public reviewed loader/report are copied as
+reference assets; raw uploads and private job directories are not published.
+
+```bash
+python3 tools/build_pages.py
+```
+
+```bash
+python3 tools/build_pages.py --check
+```
+
+Commit the generated `docs/` changes along with the source changes. CI checks
+that the committed static build is current. Preview locally without any backend:
+
+```bash
+python3 -m http.server 8090 --bind 0.0.0.0 --directory docs
+```
+
+Open `http://localhost:8090`. The Pages edition uses relative asset URLs, including
+inside a project subpath such as `/Nullx11deob/`; it never calls `/api` on github.io.
 
 ## Launch from GitHub
 
@@ -26,10 +99,9 @@ Start it manually:
 .venv/bin/python -B web_server.py --host 0.0.0.0 --port 8080
 ```
 
-**GitHub Pages cannot execute these Python/Node/native engines.** The app uses
-same-origin `/api` endpoints. Publishing only `web/` as a Pages site shows a worker
-offline message; it does not deobfuscate anything. Codespaces/private backend
-hosting is the working GitHub launcher, not a pretend static Pages integration.
+The server edition in `web/` uses same-origin `/api` endpoints. Do not publish
+`web/` directly as a Pages site: use the built `docs/` edition instead. Pages runs
+Clyde in a browser worker; Python/native Luraph still requires this private server.
 
 ## Local setup
 

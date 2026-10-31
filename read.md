@@ -8,7 +8,10 @@ A guided, colored terminal menu for pinned static **Clyde** and the existing Lur
 
 **[Open the web launcher guide](WEB.md)** for the actual backend, private GitHub
 Codespaces launcher, engine/mode selection, upload, live logs, cancellation,
-source preview and downloads. This is not a static GitHub Pages deobfuscator.
+source preview and downloads. A separate **[GitHub Pages browser edition](WEB.md#github-pages--githubio)**
+runs Clyde locally without uploads; Luraph still requires the private backend.
+For github.io hosting, select this branch and `/docs` in repository Settings → Pages.
+The current connection was denied permission to enable Pages automatically (403).
 Product and integration branding: **null**; upstream license notices remain intact.
 
 After the existing one-command setup below, install Node.js 16+ for Clyde (22 recommended).

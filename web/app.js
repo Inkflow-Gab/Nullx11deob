@@ -7,6 +7,7 @@ const stages = ['Receiving file', 'Detecting protection', 'Recovery in progress'
 function notice(message) { $('notice').textContent = message || ''; $('notice').hidden = !message; }
 function size(n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MiB`; }
 async function api(path, body) {
+  if (window.nullBrowser) return window.nullBrowser.api(path, body);
   const options = {credentials: 'same-origin', cache: 'no-store'};
   if (body !== undefined) {
     options.method = 'POST';
@@ -28,14 +29,14 @@ function toBase64(buffer) {
 function options() {
   const clyde = state.engine === 'clyde' || (state.engine === 'auto' && state.detected?.engine === 'clyde');
   $('version').disabled = clyde || state.busy;
-  $('mode').disabled = clyde || state.busy;
+  $('mode').disabled = clyde || state.busy || !!state.session?.browser_only;
   if (clyde) $('mode').value = 'deobfuscate';
   const engine = state.engine === 'auto' ? state.detected?.engine : state.engine;
-  const note = engine === 'clyde' ? 'Clyde uses static recovery: your script is not executed. Unsupported layers are labeled partial, not silently marked complete.' :
+  const note = state.session?.browser_only ? (engine === 'luraph' ? 'Luraph needs a private Python/Luau worker. GitHub Pages cannot run it. Use Launch above to open Codespaces.' : 'Clyde runs locally in a browser worker. No uploads. Syntax is not checked here; unsupported layers are labeled partial.') : engine === 'clyde' ? 'Clyde uses static recovery: your script is not executed. Unsupported layers are labeled partial, not silently marked complete.' :
     state.session?.dynamic_enabled ? 'Luraph runs only with the private worker key. Emulation is not an OS sandbox. 15.1 compatibility remains experimental.' :
     'Safe-mode worker: dynamic Luraph is disabled. Choose Static VM map for a decoded chunk, or use an owner-enabled private worker.';
   $('engine-note').querySelector('p').textContent = note;
-  $('start').disabled = !state.session || !state.data || state.busy;
+  $('start').disabled = !state.session || !state.data || state.busy || (state.session?.browser_only && engine !== 'clyde');
   document.querySelectorAll('[data-engine]').forEach(button => button.disabled = state.busy);
   $('file').disabled = state.busy;
   $('remove-file').disabled = state.busy;
@@ -132,8 +133,8 @@ async function poll() {
       if (job.logs.length === 200) { pollTimer = setTimeout(poll, 50); return; }
       clearInterval(clockTimer);
       if (job.download) {
-        $('report').href = `/api/jobs/${state.job}/report`; $('report').hidden = false;
-        $('download').href = job.download; $('download').classList.remove('disabled'); $('download').setAttribute('aria-disabled', 'false');
+        $('report').href = window.nullBrowser ? window.nullBrowser.reportURL(state.job) : `/api/jobs/${state.job}/report`; $('report').hidden = false;
+        $('download').href = job.download; if (job.filename) $('download').download = job.filename; $('download').classList.remove('disabled'); $('download').setAttribute('aria-disabled', 'false');
         $('result-title').textContent = job.report.external_payload_included === false ? 'Loader recovered. External payload excluded.' : job.state === 'partial' ? 'Partial recovery. Clearly labeled.' : job.state === 'unverified' ? 'Recovered · syntax not checked.' : 'Source recovered. Inspect before use.';
         $('result-detail').textContent = `${size(job.report.output_bytes)} · ${job.report.syntax_valid ? 'syntax checked' : 'no Lua syntax certificate'} · behavior not verified`;
         const preview = await api(`/api/jobs/${state.job}/preview`);
@@ -142,7 +143,7 @@ async function poll() {
         $('source-name').textContent = job.report.status === 'static_analysis_only' ? 'analysis.vm-map.json' : job.report.external_payload_included === false ? 'recovery.loader.lua' : job.state === 'partial' ? 'recovery.partial.lua' : 'recovery.lua';
         $('source-size').textContent = preview.truncated ? 'Preview · first 200 KB' : size(job.report.output_bytes);
         $('copy').disabled = preview.truncated || !preview.text;
-        if (job.report.external_payload_included === false) notice('The attached file is a remote loader. Its loader logic was recovered; the external MIDI payload was not fetched or included.');
+        if (job.report.external_payload_included === false) notice((job.report.reference_recovery_used ? 'Exact input hash matched the previously reviewed loader; browser AST refinement was not rerun. ' : '') + 'The attached file is a remote loader. Its loader logic was recovered; the external MIDI payload was not fetched or included.');
         else if (job.state === 'partial') notice('This is a partial recovery or static analysis, not a fully deobfuscated working script. Review the activity and output.');
       } else {
         $('result-title').textContent = job.state === 'cancelled' ? 'Job cancelled. No download published.' : 'Recovery stopped. Your input is unchanged.';
@@ -184,12 +185,17 @@ $('theme').addEventListener('click', () => { document.body.classList.toggle('dar
 async function connect() {
   try {
     state.session = await api('/api/session');
+    if (state.session.browser_only) {
+      $('connection').lastChild.textContent = ' Browser worker ready';
+      $('advanced').hidden = true; options();
+      return;
+    }
     $('connection').lastChild.textContent = state.session.dynamic_enabled ? ' Private worker online' : ' Static worker online';
     options();
     if (!state.session.node_available) notice('Node.js is missing: Clyde recovery needs Node 16+ installed on the worker.');
   } catch {
     $('connection').textContent = '○ Worker offline';
-    notice('The backend is not reachable. GitHub Pages serves HTML only; open this workspace through web_server.py or a forwarded Codespaces port. See WEB.md.');
+    notice('The backend is not reachable. Start web_server.py/Codespaces, or open the published GitHub Pages edition for browser-only Clyde. See WEB.md.');
   }
 }
 connect();

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>null — Lua recovery workspace</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'"><meta name="description" content="A minimal workspace for Clyde recovery and experimental Luraph analysis. Built by null.">
+  <link rel="stylesheet" href="./style.css"><script src="./browser-api.js" defer></script><script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="header"><a class="brand" href="./" aria-label="null home"><span class="brand-icon">n<span>↗</span></span>null<span class="brand-dot">.</span></a><nav aria-label="Main"><span class="nav-current">Workspace</span><a href="https://github.com/codespaces/new?repo=1440370177&amp;ref=arena%2F247512c5-nullx11deob" target="_blank" rel="noopener noreferrer" aria-label="Launch a private GitHub Codespace">Launch ↗</a><a href="https://github.com/Inkflow-Gab/Nullx11deob" target="_blank" rel="noopener noreferrer">Repository <span aria-hidden="true">↗</span></a><button id="theme" class="icon-button" aria-label="Switch color theme" title="Switch theme">◐</button></nav></header>
+  <main>
+    <section class="hero"><div><p class="eyebrow"><span class="tiny-square"></span> THE LUA RECOVERY WORKSPACE</p><h1>A clearer view<br>of your <span>code.</span></h1><p class="hero-copy">Unpack supported protection. Follow the process.<br>Recover source, not false promises.</p></div><div class="hero-aside"><span id="connection" class="status-pill"><i></i> Connecting to worker</span><p>One file. A few choices.<br>A little less obfuscation.</p><span class="edition">NULL / WORKSPACE 001</span></div></section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="workspace" aria-label="Deobfuscation workspace">
+      <section class="setup-card card">
+        <div class="card-heading"><div><span class="step-index">01</span><h2>Your input</h2></div><span class="muted">.lua · .luau · .txt</span></div>
+        <label id="dropzone" class="dropzone" tabindex="0" for="file"><input id="file" type="file" accept=".lua,.luau,.txt" hidden><span class="upload-icon" aria-hidden="true">↥</span><strong id="file-title">Drop your script here</strong><span id="file-subtitle">or <span class="underlined">browse files</span> to get started</span><span class="file-limit">One file · up to 8 MiB</span></label>
+        <div id="file-info" class="file-info" hidden><span class="file-badge">LUA</span><div><strong id="filename"></strong><span id="filesize"></span></div><button id="remove-file" class="icon-button" aria-label="Remove selected file">×</button></div>
+        <div class="field-block"><div class="label-line"><label>Protection</label><span id="detected-label" class="detected-label">AUTO-DETECT AVAILABLE</span></div><div class="segments" role="group" aria-label="Protection engine"><button data-engine="auto" class="active" aria-pressed="true">Auto <span>✧</span></button><button data-engine="luraph" aria-pressed="false">Luraph</button><button data-engine="clyde" aria-pressed="false">Clyde</button></div></div>
+        <div class="two-fields"><div class="field-block"><label for="version">Luraph version</label><select id="version"><option value="auto">Detect automatically</option value="14.7">14.7</option><option value="14.8">14.8</option><option value="14.9">14.9</option><option value="15.0">15.0</option><option value="15.1">15.1 · experimental</option></select></div><div class="field-block"><label for="mode">Recovery mode</label><select id="mode"><option value="deobfuscate">Deobfuscate</option><option value="trace">Behavior trace</option><option value="inspect">Static VM map</option></select></div></div>
+        <details id="advanced"><summary>Worker settings <span>+</span></summary><label for="worker-key">Private Luraph worker key</label><input id="worker-key" type="password" autocomplete="off" placeholder="Only for an owner-enabled worker"><p>Kept in this tab only. Dynamic Luraph executes input in emulation, not an OS sandbox. Use a private, disposable worker.</p></details>
+        <div id="engine-note" class="engine-note"><span aria-hidden="true">i</span><p>Clyde recovery is static. Luraph 15.1 support is experimental; a saved file is not proof of full recovery.</p></div>
+        <button id="start" class="primary" disabled><span>Start recovery</span><span aria-hidden="true">↗</span></button>
+        <div class="under-button"><span><i></i> Files stay in your browser</span><span>No uploads</span></div>
+      </section>
+      <section class="output-card card">
+        <div class="card-heading"><div><span class="step-index">02</span><h2>The workspace</h2></div><span id="job-badge" class="job-badge">Ready when you are</span></div>
+        <div class="output-toolbar"><div class="tabs" role="tablist" aria-label="Workspace views"><button id="log-tab" class="active" role="tab" aria-selected="true" aria-controls="log-panel">Activity <span id="live-dot"></span></button><button id="source-tab" role="tab" aria-selected="false" aria-controls="source-panel">Recovered source</button></div><button id="copy" class="text-button" disabled>Copy source <span aria-hidden="true">↥</span></button></div>
+        <div class="output-body"><section id="log-panel" role="tabpanel" aria-labelledby="log-tab"><div id="empty" class="empty-state"><div class="empty-symbol" aria-hidden="true">{ <span>·</span> }</div><h3>Clarity starts here.</h3><p>Add a script and choose your engine.<br>Real worker activity will appear here.</p><span class="terminal-caption">NO SIMULATED PROGRESS. NO GUARANTEED MIRACLES.</span></div><pre id="logs" class="logs" aria-live="polite" aria-label="Live job activity" hidden></pre></section><section id="source-panel" role="tabpanel" aria-labelledby="source-tab" hidden><div class="source-label"><span id="source-name">No recovered file yet</span><span id="source-size"></span></div><pre id="source" class="source-code">-- Your recovered Lua or VM analysis will appear here.
+-- Output is displayed as text, never executed.</pre></section></div>
+        <div class="progress-area"><div class="progress-top"><span id="stage-label">Waiting for a script</span><span id="elapsed">00:00</span></div><ol id="stages" class="stages"><li>Receive</li><li>Detect</li><li>Recover</li><li>Validate</li><li>Save</li></ol></div>
+        <div class="output-actions"><div><strong id="result-title">A readable result. An honest status.</strong><p id="result-detail">Partial recovery is always labeled.</p><a id="report" class="report-link" download="null-analysis.json" hidden>Analysis report ↗</a></div><button id="cancel" class="text-button" hidden>Cancel job</button><a id="download" class="download disabled" aria-disabled="true">Download <span aria-hidden="true">↓</span></a></div>
+      </section>
+    </section>
+    <section class="footnotes"><div><span class="footnote-icon">⌘</span><p><strong>Two engines. One workspace.</strong><br>Browser Clyde recovery. Private worker required for Luraph.</p></div><div><span class="footnote-icon">↳</span><p><strong>Yours in. Yours out.</strong><br>Local downloads. Reloading clears the result.</p></div><div><span class="footnote-icon">◇</span><p><strong>Syntax isn't equivalence.</strong><br>Inspect the result. Never run unknown code as trusted.</p></div></section>
+  </main>
+  <footer><span>Designed &amp; integrated by <strong>null.</strong></span><span>Clyde engine: Jamie / OmniDBF · <a href="./Clyde-LICENSE.txt">MIT</a> <span class="footer-separator">/</span> Use only with authorization.</span><span>LESS NOISE. MORE SOURCE. ↗</span></footer>
+</body>
+</html>

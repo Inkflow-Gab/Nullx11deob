@@ -13,6 +13,9 @@ sample-scoped Clyde refinement: **null**. This does not reassign upstream author
   of the reviewed source at that commit. There are no npm runtime dependencies.
 - The original README and engine output credit are retained. `clyde_cli.js` is null's
   adapter, not a claim that null authored the upstream engine.
+- `docs/clyde-worker.js` is a generated browser bundle of that same source, with
+  a local empty `process.env` shim and null's separate worker adapter. Source and
+  license comments are retained; `docs/Clyde-LICENSE.txt` carries the full license.
 - `clyde_refine.py` is null's separate, exact-input-hash-gated static refinement for
   `RoMidiYessirAp.txt`. It is not general Clyde register-VM support.
 

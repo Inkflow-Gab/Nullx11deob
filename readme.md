@@ -15,7 +15,13 @@ Minimal vanilla HTML/CSS/JS frontend with a real Python backend: choose Clyde or
 Luraph, automatic/manual version, live logs, cancellation, static VM mapping,
 source preview/copy, and session-owned downloads. Default safe mode runs static
 Clyde and AST inspection; dynamic Luraph needs a private owner-enabled worker.
-Codespaces forwards private port 8080. **GitHub Pages alone cannot run the engines.**
+Codespaces forwards private port 8080. The new **[GitHub Pages browser edition](WEB.md#github-pages--githubio)**
+runs static Clyde without a backend or uploads; Luraph still needs a private worker.
+
+Pages address after one-time activation: **https://inkflow-gab.github.io/Nullx11deob/**.
+The current GitHub connection could not enable Pages (403). In **Settings → Pages**,
+select **Deploy from a branch → `arena/247512c5-nullx11deob` → `/docs` → Save**.
+Hosting is not confirmed live until that deployment succeeds.
 
 After normal setup and installing Node.js 16+:
 
