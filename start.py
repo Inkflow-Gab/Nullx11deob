@@ -39,10 +39,15 @@ def main(argv=None):
     cli.configure_output_streams()
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--yes", action="store_true")
+    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--private-worker", action="store_true")
     starter, arguments = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    if starter.private_worker and not starter.web:
+        print("--private-worker requires --web. Use a private, disposable host.", file=sys.stderr)
+        return 2
     ui = cli.UI("--no-color" in arguments)
     if "--help" in arguments or "-h" in arguments:
-        ui.say("Starter: --yes permits first-time setup without prompting; all CLI options below are supported.\n")
+        ui.say("Starter: --yes permits first setup; --web launches the website; --web --private-worker explicitly enables owner-key Luraph. All CLI options below are supported.\n")
     python = environment_python()
     # Help/check/setup must never trigger an implicit download.
     explicit_action = any(flag in arguments for flag in ("--setup", "--doctor", "--help", "-h"))
@@ -72,7 +77,27 @@ def main(argv=None):
         sys.stderr.flush()
         # Replacing the starter avoids a second waiting launcher and makes
         # cancellation/exit codes belong to the actual CLI process.
-        os.execv(executable, [executable, "-B", str(ROOT / "cli.py"), *arguments])
+        target = ROOT / ("web_server.py" if starter.web else "cli.py")
+        forwarded = list(arguments)
+        if starter.web:
+            if any(flag in forwarded for flag in ("--setup", "--doctor")):
+                raise ValueError("Use --setup/--doctor separately from --web.")
+            # Build concurrency/UI options belong to setup, not the HTTP server.
+            filtered = []
+            skip = False
+            for item in forwarded:
+                if skip:
+                    skip = False
+                elif item == "--jobs":
+                    skip = True
+                elif item.startswith("--jobs=") or item == "--no-color":
+                    continue
+                else:
+                    filtered.append(item)
+            forwarded = filtered
+            if starter.private_worker:
+                forwarded.append("--private-worker")
+        os.execv(executable, [executable, "-B", str(target), *forwarded])
         return 0  # only reached by mocks in unit tests
     except (KeyboardInterrupt, EOFError, cli.Cancelled):
         ui.say("\nCancelled.", "yellow")

@@ -18,10 +18,20 @@ Clyde and AST inspection; dynamic Luraph needs a private owner-enabled worker.
 Codespaces forwards private port 8080. The new **[GitHub Pages browser edition](WEB.md#github-pages--githubio)**
 runs static Clyde without a backend or uploads; Luraph still needs a private worker.
 
-Pages address after one-time activation: **https://inkflow-gab.github.io/Nullx11deob/**.
-The current GitHub connection could not enable Pages (403). In **Settings → Pages**,
-select **Deploy from a branch → `arena/247512c5-nullx11deob` → `/docs` → Save**.
-Hosting is not confirmed live until that deployment succeeds.
+**Website: https://inkflow-gab.github.io/Nullx11deob/**
+
+**Run Luraph from the website:** select Luraph, choose version/mode, and use the
+full-runner panel. In your private Codespace, run:
+
+```bash
+python3 start.py --web --private-worker --port 8081
+```
+
+Paste port 8081's forwarded HTTPS URL into the panel. Confirm the optional file
+import, then enter your generated owner key **only in the private tab** and click
+Start there. See [the complete flow and key-file command](WEB.md#run-the-full-deobfuscator-from-pages).
+Clyde remains local; no code executes just because a file was imported.
+The root Pages launcher works with the existing repository-root source setting.
 
 After normal setup and installing Node.js 16+:
 

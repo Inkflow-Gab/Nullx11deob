@@ -13,7 +13,7 @@
   const detect = data => {
     const text = new TextDecoder().decode(bytes(data).subarray(0, 20000));
     const luraph = /Luraph Obfuscator v(\d+(?:\.\d+)*)/i.exec(text.slice(0, 4096));
-    if (luraph) return {engine: 'luraph', version: luraph[1], warning: 'Luraph was detected, but GitHub Pages cannot run Python/Luau. Use Launch to open a private worker. 15.1 remains experimental.'};
+    if (luraph) return {engine: 'luraph', version: luraph[1], warning: 'Luraph detected. Use the full-runner panel to open your private Python/Luau worker. 15.1 remains experimental.'};
     if (/clydeprotection|Clyde Protection/i.test(text)) return {engine: 'clyde', version: 'auto', warning: null};
     return {engine: null, version: null, warning: 'No reliable signature. Select Clyde manually, or use a private worker for Luraph.'};
   };

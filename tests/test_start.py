@@ -39,6 +39,26 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(execute.call_args.args[0], str(self.python))
         self.assertEqual(execute.call_args.args[1][-1], str(self.root / "cli.py"))
 
+    def test_web_private_worker_routes_to_server_and_keeps_engine_timeout(self):
+        with patch.object(cli, "find_runtime", return_value="luau"), \
+             patch.object(cli, "find_ast", return_value="ast"), \
+             patch.object(cli, "validate_native_tools", return_value=[]), \
+             patch.object(os, "execv") as execute:
+            self.assertEqual(start.main(["--web", "--private-worker", "--port", "8081", "--timeout", "600", "--jobs", "2"]), 0)
+        command = execute.call_args.args[1]
+        self.assertIn(str(self.root / "web_server.py"), command)
+        self.assertIn("--private-worker", command)
+        self.assertIn("600", command)
+        self.assertNotIn("--web", command)
+        self.assertNotIn("--jobs", command)
+
+    def test_web_help_does_not_install_or_enable_execution(self):
+        with patch.object(cli, "stream_process") as setup, patch.object(os, "execv") as execute:
+            self.assertEqual(start.main(["--web", "--help"]), 0)
+        setup.assert_not_called()
+        self.assertIn(str(self.root / "web_server.py"), execute.call_args.args[1])
+        self.assertNotIn("--private-worker", execute.call_args.args[1])
+
     def test_noninteractive_missing_setup_has_actionable_error(self):
         self.python.unlink()
         with patch.object(sys.stdin, "isatty", return_value=False), patch.object(os, "execv") as execute:

@@ -29,14 +29,19 @@ function toBase64(buffer) {
 function options() {
   const clyde = state.engine === 'clyde' || (state.engine === 'auto' && state.detected?.engine === 'clyde');
   $('version').disabled = clyde || state.busy;
-  $('mode').disabled = clyde || state.busy || !!state.session?.browser_only;
+  $('mode').disabled = clyde || state.busy;
   if (clyde) $('mode').value = 'deobfuscate';
   const engine = state.engine === 'auto' ? state.detected?.engine : state.engine;
-  const note = state.session?.browser_only ? (engine === 'luraph' ? 'Luraph needs a private Python/Luau worker. GitHub Pages cannot run it. Use Launch above to open Codespaces.' : 'Clyde runs locally in a browser worker. No uploads. Syntax is not checked here; unsupported layers are labeled partial.') : engine === 'clyde' ? 'Clyde uses static recovery: your script is not executed. Unsupported layers are labeled partial, not silently marked complete.' :
+  const note = state.session?.browser_only ? (engine === 'luraph' ? 'Full Luraph recovery runs in your private Python/Luau worker. Enter its URL below to open the runner and optionally import this file.' : 'Clyde runs locally in a browser worker. No uploads. Syntax is not checked here; unsupported layers are labeled partial.') : engine === 'clyde' ? 'Clyde uses static recovery: your script is not executed. Unsupported layers are labeled partial, not silently marked complete.' :
     state.session?.dynamic_enabled ? 'Luraph runs only with the private worker key. Emulation is not an OS sandbox. 15.1 compatibility remains experimental.' :
     'Safe-mode worker: dynamic Luraph is disabled. Choose Static VM map for a decoded chunk, or use an owner-enabled private worker.';
   $('engine-note').querySelector('p').textContent = note;
-  $('start').disabled = !state.session || !state.data || state.busy || (state.session?.browser_only && engine !== 'clyde');
+  $('start').disabled = !state.session || !state.data || state.busy;
+  const linked = !!state.session?.browser_only && engine === 'luraph';
+  $('runner-panel').hidden = !linked;
+  $('privacy-label').lastChild.textContent = linked ? ' Transfer only with consent' : state.session?.browser_only ? ' Files stay in your browser' : ' Session-scoped results';
+  $('privacy-mode').textContent = linked ? 'No auto-run' : state.session?.browser_only ? 'No uploads' : 'No sign-up';
+  if (!state.busy) $('start').querySelector('span').textContent = linked ? 'Open full deobfuscator ↗' : 'Start recovery';
   document.querySelectorAll('[data-engine]').forEach(button => button.disabled = state.busy);
   $('file').disabled = state.busy;
   $('remove-file').disabled = state.busy;
@@ -92,6 +97,11 @@ function clock() {
 }
 async function start() {
   if (!state.data || state.busy) return;
+  if (state.session?.browser_only && (state.engine === 'luraph' || (state.engine === 'auto' && state.detected?.engine === 'luraph'))) {
+    try { window.nullRuntimeLink.open({filename: state.file.name, data: state.data, settings: {engine: 'luraph', version: $('version').value, mode: $('mode').value}}, $('runner-url').value, notice); }
+    catch (error) { notice(error.message); }
+    return;
+  }
   notice(''); resetDownload(); view('log');
   $('empty').hidden = true; $('logs').hidden = false; $('logs').textContent = '[client] Connecting to the worker…\n';
   $('job-badge').textContent = 'Starting';
@@ -192,6 +202,16 @@ async function connect() {
     }
     $('connection').lastChild.textContent = state.session.dynamic_enabled ? ' Private worker online' : ' Static worker online';
     options();
+    window.nullRuntimeLink?.receive(async payload => {
+      if (state.busy) throw new Error('A job is running. Wait for it to finish, then import again.');
+      const binary = atob(payload.data);
+      const file = new File([Uint8Array.from(binary, char => char.charCodeAt(0))], payload.filename, {type: 'text/plain'});
+      await loadFile(file);
+      if (!state.data || state.file !== file) throw new Error('Import was replaced or detection failed. Upload it manually.');
+      chooseEngine(payload.settings.engine); $('version').value = payload.settings.version; $('mode').value = payload.settings.mode; options();
+      if (state.session.dynamic_enabled) $('advanced').open = true;
+      notice('Imported from your Pages tab. Review engine/version/mode. For dynamic Luraph, enter your owner key in Worker settings, then press Start recovery. No code has run.');
+    }, notice);
     if (!state.session.node_available) notice('Node.js is missing: Clyde recovery needs Node 16+ installed on the worker.');
   } catch {
     $('connection').textContent = '○ Worker offline';

@@ -40,7 +40,7 @@ def bundle():
 
 def build(destination):
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ('style.css', 'app.js', 'browser-api.js'):
+    for name in ('style.css', 'app.js', 'browser-api.js', 'runtime-link.js'):
         shutil.copyfile(ROOT / 'web' / name, destination / name)
     html = (ROOT / 'web/index.html').read_text(encoding='utf-8')
     html = html.replace('<script src="./app.js" defer>', '<script src="./browser-api.js" defer></script><script src="./app.js" defer>')
@@ -49,7 +49,7 @@ def build(destination):
     html = html.replace('Jamie / OmniDBF · MIT', 'Jamie / OmniDBF · <a href="./Clyde-LICENSE.txt">MIT</a>')
     html = html.replace('Session-scoped results', 'Files stay in your browser').replace('No sign-up', 'No uploads')
     html = html.replace('Clyde static recovery + Luraph compatibility and VM analysis.', 'Browser Clyde recovery. Private worker required for Luraph.')
-    html = html.replace('Session-owned downloads. Files expire after one hour.', 'Local downloads. Reloading clears the result.')
+    html = html.replace('Session-owned downloads. Files expire after one hour.', 'Clyde stays local. Luraph transfers only with consent.')
     (destination / 'index.html').write_text(html, encoding='utf-8')
     (destination / 'clyde-worker.js').write_text(bundle(), encoding='utf-8')
     shutil.copyfile(ROOT / 'vendor/clyde/LICENSE', destination / 'Clyde-LICENSE.txt')

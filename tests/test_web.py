@@ -1,5 +1,7 @@
 """HTTP, isolation, static-engine and sample-scope regressions. No user Lua is executed."""
 import base64
+import contextlib
+import io
 import http.cookiejar
 import json
 from pathlib import Path
@@ -84,6 +86,25 @@ class WebUnitTests(unittest.TestCase):
             blank.log('')
         self.assertLessEqual(len(blank.logs), 4000)
         self.assertGreater(blank.log_bytes, 0)
+
+    def test_duplicate_start_cannot_clean_running_workers_job_directory(self):
+        with patch('sys.argv', ['web_server.py', '--private-worker', '--port', '8081']), \
+             patch.object(web, 'Server', side_effect=OSError('address in use')), \
+             patch.object(web, 'Manager') as manager, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                web.main()
+        manager.assert_not_called()
+
+    def test_generated_owner_key_is_private_and_atomic(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'worker.key'
+            web.save_private_key(path, 'test-key-not-a-real-credential')
+            self.assertEqual(path.read_text().strip(), 'test-key-not-a-real-credential')
+            if web.os.name != 'nt':
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            web.save_private_key(path, 'replacement-test-key')
+            self.assertEqual(path.read_text().strip(), 'replacement-test-key')
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ['worker.key'])
 
     def test_clyde_command_routes_to_static_adapter(self):
         with patch('cli.shutil.which', return_value='node'):

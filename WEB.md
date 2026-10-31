@@ -6,7 +6,7 @@ No CDN, analytics, npm runtime dependency, or third-party upload API.
 
 ## GitHub Pages — github.io
 
-Expected site URL after enabling hosting:
+Published Pages URL:
 **https://inkflow-gab.github.io/Nullx11deob/**
 
 The ready-to-publish site is committed under `docs/`. It runs the pinned Clyde
@@ -15,37 +15,90 @@ or uploading your input. It provides automatic signature detection, actual worke
 logs, a 180-second timeout, cancellation, source preview, local file/report downloads,
 and the same responsive light/dark interface.
 
-### One-time activation
+### Pages hosting
 
-The current GitHub connection returned **403 Resource not accessible by integration**
-when asked to enable Pages. Hosting could not be activated automatically. Either
-reconnect GitHub in Arena with Pages administration permission, or use the repository
-settings directly (no token/password is needed in chat):
+GitHub reports this branch's Pages site as built, using the repository root (`/`).
+The root `index.html` now forwards to the actual `docs/` application. Both supported
+source settings work: this branch + `/` (root launcher) or this branch + `/docs`
+(direct app). No setting change is needed for the existing root deployment.
 
-1. Open [Settings → Pages](https://github.com/Inkflow-Gab/Nullx11deob/settings/pages).
-2. Set **Source → Deploy from a branch**.
-3. Choose branch **`arena/247512c5-nullx11deob`**, folder **`/docs`**.
-4. Click **Save**, then wait for GitHub's Pages deployment to finish. GitHub will
-   show the live URL. Until enabled and deployed, that URL can return 404.
+For a new deployment, choose **Deploy from a branch** in
+[Settings → Pages](https://github.com/Inkflow-Gab/Nullx11deob/settings/pages), then
+select `arena/247512c5-nullx11deob` and either folder above. The connection could
+not originally create Pages (403); the owner enabled it. Pushes now trigger the
+existing deployment. New versions are available when GitHub finishes that build.
+These changes are still on this branch, not merged to `main`.
 
-Use this branch, not `main`: these changes are still in the open pull request.
-The `.nojekyll` file makes this a plain static deployment. No Codespace needs to
-be started for Clyde. Later pushes to this branch's `docs/` redeploy automatically.
+### Run the full deobfuscator from Pages
+
+1. Select **Luraph** (or upload a bannered file for auto-detection), then choose
+   the version and **Deobfuscate / Behavior trace / Static VM map** mode.
+2. Open/create your own Codespace using the panel link. Its first setup installs
+   Python/Node and builds the trusted Luau tools. Keep forwarded ports **Private**.
+3. In its terminal, start the full runner with one command:
+
+```bash
+python3 start.py --web --private-worker --port 8081
+```
+
+If setup is needed, the starter asks permission to install dependencies. For an
+explicitly unattended setup/start on a prepared disposable host:
+
+```bash
+python3 start.py --yes --web --private-worker --port 8081
+```
+
+4. Open **Ports → 8081 → Open in Browser**. Copy that HTTPS forwarded URL (not the
+   editor's `github.dev` URL) into the Pages **Forwarded worker URL** field.
+5. Click **Open full deobfuscator** and confirm the destination. When tab import
+   is allowed, the selected file/version/mode is imported into that worker.
+   **Import does not execute the code.** Read your generated owner key locally:
+
+```bash
+cat output/private-worker-8081.key
+```
+
+6. Paste that key only in **Worker settings in the private runner tab**. Review
+   the imported settings and press **Start recovery** there. The native engine
+   actually runs; that tab shows its live logs, cancel, output preview and downloads.
+
+The worker must remain running. Pages cannot install Python or start a server by
+itself. No paid host/Codespace is created or billed automatically. If your Codespace
+is older than these changes, pull this branch before running the new command:
+
+```bash
+git pull origin arena/247512c5-nullx11deob
+```
+
+Tab import uses exact-window/origin checks and a one-use random nonce. The Pages
+sender requires explicit destination confirmation. The receiver accepts only the
+configured Pages origin, checks file/settings bounds, and **never submits a job**.
+No owner key, worker cookies, job logs or recovered result is returned to Pages.
+There is no CORS exception or public execution proxy. Pages itself makes no backend
+API requests. After import, the worker severs the opener connection.
+
+**If GitHub login, COOP isolation, popup policy or a custom Pages domain blocks
+import:** sign in/open the private worker and upload directly there, or retry the
+Pages button after signing in. Manual upload is always supported; automatic import
+is a convenience, not a requirement for running the engines. Only enter a worker
+URL you own/trust. No request is made to the Gist/MIDI payload during import.
 
 ### Browser edition limitations
 
-- **Luraph cannot run on Pages.** Detection/version display is available, but its
-  recovery button is disabled. Use **Launch** for the private Codespaces worker.
+- **Python/Luau cannot execute inside Pages.** The Luraph action opens your private
+  full runner as described above; Clyde remains browser-local.
 - No browser Luau AST tool is bundled: syntax and behavior are **not checked** in
   the browser. Unsupported/peeled VM layers are labeled partial.
 - For the exact RoMidi input hash, the worker can return the previously reviewed,
   hash-verified loader already published in this repository. The log and report
   explicitly mark it as a reference recovery, not a new browser AST refinement.
   The remote MIDI payload is still not fetched or included.
-- Input and current results stay in the tab. Closing/reloading discards them;
+- Clyde input and current results stay in the tab. Closing/reloading discards them;
   downloaded files remain wherever your browser saves them. The worker never
   executes uploaded Lua. GitHub still receives ordinary requests for public
-  site assets and may retain standard hosting access logs.
+  site assets and may retain standard hosting access logs. Selecting the Luraph
+  handoff is different: after confirmation your script goes to the worker you
+  entered, where its normal upload/retention policy applies.
 - File limit 8 MiB, output limit 16 MiB; only the current result is retained.
   A large input can exceed browser memory despite these bounds. Cancellation
   terminates the worker. Logs have the same 256 KB / 4,000-line cap.
@@ -149,14 +202,21 @@ python web_server.py --host 0.0.0.0 --port 8080
 - Real merged engine logs, elapsed time, stage indicators, cancellation, queueing,
   light/dark theme, drag/drop, mobile layout, and copy source. No invented percentage.
 
-## Private dynamic Luraph worker — optional
+## Private dynamic Luraph worker — explicit opt-in
 
 **Do not expose dynamic execution publicly.** Emulation is not an OS security
 boundary. Use a disposable isolated machine/container without secrets; only inspect
 authorized code. This application is a single-owner launcher, not a hardened
 multi-tenant service, and must not be treated as an internet-facing execution sandbox.
 
-Create a long random owner key in your terminal (not a GitHub token):
+The `start.py --web --private-worker` command above generates an owner-only key
+file under ignored `output/`, never prints the secret in server logs, and uses a
+separate `output/private-web-jobs-PORT/` directory so it does not delete an existing
+safe worker's jobs. It does not enable public unauthenticated execution. Each
+restart generates a new key unless you supply `NULL_WEB_ACCESS_KEY`. Generated key
+files remain until you remove them; do not commit/share them.
+
+For the original environment-key workflow, create a key (not a GitHub token):
 
 ```bash
 export NULL_WEB_ACCESS_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
@@ -177,8 +237,9 @@ python3 web_server.py --allow-dynamic --host 0.0.0.0 --port 8080
 Keep the forwarded port private. The key is kept in the browser tab only, never
 localStorage, and is excluded from engine subprocess environments. Do not put it
 in source control or a URL. For Codespaces auto-start, configure `NULL_WEB_DYNAMIC=1`
-and `NULL_WEB_ACCESS_KEY` as private Codespaces environment settings/secrets before
-restarting the container. The default launcher does not enable dynamic execution.
+as a private Codespaces environment setting before restarting the container.
+`NULL_WEB_ACCESS_KEY` is optional in that explicit mode: absent it, the launcher
+generates `output/private-worker-8080.key`. The default launcher does not enable dynamic execution.
 
 ## Limits and privacy
 
@@ -190,7 +251,8 @@ restarting the container. The default launcher does not enable dynamic execution
   across top-level sites. Open the preview in its own tab if a browser blocks
   all embedded cookies.
   Different sessions cannot view another session's logs, report, preview or download.
-- Uploads/results are stored as plaintext in ignored `output/web-jobs/` directories.
+- Uploads/results are stored as plaintext in ignored `output/web-jobs/` or
+  `output/private-web-jobs-PORT/` directories.
   Terminal jobs expire one hour after creation; a clean shutdown removes job data,
   and a subsequent startup removes previous run job directories. A crash does not
   securely erase disk contents. Do not upload sensitive material to an untrusted host.
@@ -245,3 +307,14 @@ fixture. A simulated HTTPS cross-site embedded preview was also exercised throug
 the real worker. Desktop and 390px mobile rendering were checked; no horizontal overflow or
 browser JavaScript exceptions were observed. Codespaces configuration is supplied
 but a remote Codespace has not been provisioned/tested in this session.
+
+## Full-runner integration verification
+
+The real native Luraph v15 pipeline was exercised via the new Pages-tab import
+flow against the bundled `SON.LUA` fixture. Import did not submit a job; a missing
+key was rejected; the authorized run recovered `print("hello")`, passed syntax
+validation, and downloaded correctly. This does not establish full support for
+all protected files or 15.1. Wrong source/window/nonce and replay are tested.
+The existing browser-only Clyde workflow is preserved. A Codespace with real
+GitHub authentication/COOP was not provisioned in this session; use manual upload
+if its authentication redirects isolate the opener.

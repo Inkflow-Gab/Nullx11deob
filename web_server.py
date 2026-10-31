@@ -23,6 +23,7 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 from urllib.parse import urlsplit, parse_qs
 
@@ -387,8 +388,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def get(self):
         url = urlsplit(self.path)
-        if url.path in ('/', '/index.html', '/app.js', '/style.css'):
-            name = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}[url.path]
+        if url.path in ('/', '/index.html', '/app.js', '/runtime-link.js', '/style.css'):
+            name = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/runtime-link.js': 'runtime-link.js', '/style.css': 'style.css'}[url.path]
             mime = {'html': 'text/html; charset=utf-8', 'js': 'text/javascript; charset=utf-8', 'css': 'text/css; charset=utf-8'}[name.split('.')[-1]]
             return self.send(200, (STATIC / name).read_bytes(), mime)
         if url.path == '/api/session':
@@ -512,23 +513,63 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, Handler)
 
 
+def save_private_key(path, key):
+    """Owner-readable key, atomically replaced; never print it in server logs."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, prefix='.null-key-', delete=False) as file:
+            temporary = Path(file.name)
+            file.write(key + '\n')
+        os.replace(temporary, path)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', '8080')))
     parser.add_argument('--allow-dynamic', action='store_true', help='private owner-only Luraph execution; needs NULL_WEB_ACCESS_KEY')
+    parser.add_argument('--private-worker', action='store_true', help='explicitly enable owner-key Luraph and generate a local key if no environment key is provided; use a disposable PRIVATE host')
     parser.add_argument('--timeout', type=int, default=180)
-    parser.add_argument('--data-dir', type=Path, default=ROOT / 'output/web-jobs')
+    parser.add_argument('--data-dir', type=Path, default=None)
     args = parser.parse_args()
     if not 10 <= args.timeout <= 1800:
         parser.error('--timeout must be 10–1800 seconds')
+    dynamic = args.allow_dynamic or args.private_worker
+    key = os.environ.get('NULL_WEB_ACCESS_KEY', '')
+    generated = args.private_worker and not key
+    if generated:
+        key = secrets.token_urlsafe(36)
+    if dynamic and len(key) < 24:
+        parser.error('Dynamic Luraph needs NULL_WEB_ACCESS_KEY (at least 24 characters), or use --private-worker to generate one locally.')
+    # Bind before cleaning any job directory. A duplicate launch must not delete
+    # uploads/results belonging to the worker already using this port.
     try:
-        manager = Manager(args.data_dir, args.allow_dynamic, os.environ.get('NULL_WEB_ACCESS_KEY', ''), args.timeout)
-    except ValueError as exc:
-        parser.error(str(exc))
-    server = Server((args.host, args.port), manager)
+        server = Server((args.host, args.port), None)
+    except OSError as exc:
+        parser.error(f'Cannot listen on port {args.port}: {exc}. Use a free private port or stop the existing worker.')
+    manager = None
+    try:
+        folder = f'private-web-jobs-{server.server_port}' if args.private_worker else ('web-jobs' if server.server_port == 8080 else f'web-jobs-{server.server_port}')
+        data_dir = args.data_dir or ROOT / 'output' / folder
+        manager = Manager(data_dir, dynamic, key, args.timeout)
+        server.manager = manager
+        if generated:
+            key_path = ROOT / 'output' / f'private-worker-{server.server_port}.key'
+            save_private_key(key_path, key)
+            print(f'Owner key saved locally (not in logs): {key_path}', flush=True)
+            print('Read that file locally and paste the key in Worker settings in the PRIVATE runner tab. Never paste it into Pages or make this port public.', flush=True)
+    except BaseException:
+        if manager:
+            manager.close()
+        server.server_close()
+        raise
     print(f'null web • listening on {args.host}:{server.server_port}', flush=True)
-    print('Clyde: static • Luraph execution: ' + ('OWNER-KEY ONLY — emulation is NOT an OS sandbox' if args.allow_dynamic else 'disabled (safe mode); static VM inspection available'), flush=True)
+    print('Clyde: static • Luraph execution: ' + ('OWNER-KEY ONLY — emulation is NOT an OS sandbox' if dynamic else 'disabled (safe mode); static VM inspection available'), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

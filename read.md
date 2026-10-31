@@ -10,8 +10,25 @@ A guided, colored terminal menu for pinned static **Clyde** and the existing Lur
 Codespaces launcher, engine/mode selection, upload, live logs, cancellation,
 source preview and downloads. A separate **[GitHub Pages browser edition](WEB.md#github-pages--githubio)**
 runs Clyde locally without uploads; Luraph still requires the private backend.
-For github.io hosting, select this branch and `/docs` in repository Settings → Pages.
-The current connection was denied permission to enable Pages automatically (403).
+Pages is available at https://inkflow-gab.github.io/Nullx11deob/. The root launcher
+also works when Pages serves `/` instead of `/docs`. To run the native Luraph engine
+from its panel, start your private worker (the starter prepares missing native dependencies
+with permission):
+
+```bash
+python3 start.py --web --private-worker --port 8081
+```
+
+Read the generated owner key locally:
+
+```bash
+cat output/private-worker-8081.key
+```
+
+Paste the forwarded HTTPS URL into Pages, confirm the optional script import, then
+enter that key **only in the private worker tab** and press Start. Keep the port
+Private. See [WEB.md](WEB.md#run-the-full-deobfuscator-from-pages) for the complete flow
+and authentication/popup fallbacks. Import alone never starts execution.
 Product and integration branding: **null**; upstream license notices remain intact.
 
 After the existing one-command setup below, install Node.js 16+ for Clyde (22 recommended).

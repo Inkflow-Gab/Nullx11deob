@@ -16,6 +16,16 @@ class PagesTests(unittest.TestCase):
         result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/build_pages.py'), '--check'], capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_pages_root_setting_has_a_launcher(self):
+        source = (ROOT / 'index.html').read_text()
+        self.assertIn('content="0;url=./docs/"', source)
+        self.assertIn('href="./docs/"', source)
+        self.assertTrue((ROOT / '.nojekyll').exists())
+
+    def test_static_build_includes_private_runtime_connector(self):
+        self.assertEqual((ROOT / 'docs/runtime-link.js').read_text(), (ROOT / 'web/runtime-link.js').read_text())
+        self.assertIn('runtime-link.js', (ROOT / 'docs/index.html').read_text())
+
     def test_browser_bundle_contains_closed_relative_module_graph(self):
         source = build_pages.bundle()
         self.assertIn('const process = {env: Object.freeze({})}', source)

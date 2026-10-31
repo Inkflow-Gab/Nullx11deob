@@ -13,7 +13,7 @@ except OSError:
     folder.mkdir(exist_ok=True)
     command = [str(root / '.venv/bin/python'), '-B', str(root / 'web_server.py')]
     if os.environ.get('NULL_WEB_DYNAMIC') == '1':
-        command.append('--allow-dynamic')
+        command.append('--private-worker')
     with (folder / 'web-launcher.log').open('ab') as log:
         subprocess.Popen(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
     print('Starting null on private port 8080. Logs: output/web-launcher.log')
