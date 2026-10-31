@@ -134,7 +134,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(dest.read_text(), "old")
 
     def test_engine_command_routing_and_trace_flag(self):
-        for version in cli.ENGINES[1:]:
+        for version in (v for v in cli.ENGINES[1:] if v != "clyde"):
             cmd = cli.engine_command(self.source, self.root / "out.lua", version, True)
             self.assertIn("--no-devirt", cmd)
             self.assertIn(str(self.source), cmd)

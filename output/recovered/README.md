@@ -2,7 +2,7 @@
 
 Owner / maintainer: **null**. Analysis date: **2026-10-31**.
 
-These are analysis artifacts from the two user-supplied attachments, not trusted scripts. Do not execute them on an account or machine with secrets. Lua syntax validation does not establish safety, completeness, or equivalence.
+These are analysis artifacts from the user-supplied attachments, not trusted scripts. Do not execute them on an account or machine with secrets. Lua syntax validation does not establish safety, completeness, or equivalence.
 
 ## Results
 
@@ -10,8 +10,20 @@ These are analysis artifacts from the two user-supplied attachments, not trusted
 | --- | --- | --- | --- |
 | `StealB.lua.txt` | Luraph 15.0 | [`StealB.deobfuscated.lua`](StealB.deobfuscated.lua) | Substantial devirtualized source recovered; syntax passed. Engine reported 1,138 functions, zero unlifted blocks, zero unstructured jumps, and no remaining constant requests in its final round. Runtime tracing stopped at `Chilli Library bootstrap is invalid.` The external library was **not** fetched for analysis. Complete runtime behavior was not verified. |
 | `steal.lua.txt` | Luraph 15.1 | [`steal.partial-decoded.lua`](steal.partial-decoded.lua) | **Partial static recovery only.** Runtime tracing aborted in an endless-loop/tamper condition and captured **zero** VM prototypes. A 948,746-byte runtime-loaded chunk was decoded by the harness; that chunk was extracted and formatted without executing the recovered file. It contains readable functions **and a remaining VM wrapper**. Syntax passed. This is not a fully devirtualized original program. |
+| `RoMidiYessirAp.txt` | Clyde register VM | [`RoMidiYessirAp.deobfuscated.lua`](RoMidiYessirAp.deobfuscated.lua) | **Loader recovered, external payload not included.** Pinned upstream peeled a partial VM. null's exact-sample static refinement decoded four constants/all twelve instructions and reconstructed the main loader. Syntax passed; neither input nor recovered output was executed. The external Gist MIDI implementation was not supplied, fetched or recovered. Behavioral equivalence is not certified. |
 
 The first v15.1 attempt produced only comments. That file is deliberately **not** presented here as `steal.deobfuscated.lua`; the useful extracted chunk is labeled `partial-decoded` instead. The v15 engine was also corrected to fall back to its partial behavior trace rather than claiming a zero-prototype lift is useful devirtualization.
+
+## RoMidi / Clyde provenance
+
+- Input: 34,313 bytes, SHA-256 `c4bebd51d7cbcc3476f2ca770f3b211c9a8f83a0bd1a29da8f5ea953750c2b2a`.
+- Recovered loader: 605 bytes, SHA-256 `e0fc1a2b9431c9cbb8e79abff8448ae58fa601df8593d64f45fc6c30b29b95c1`.
+- [Machine-readable report](RoMidiYessirAp.analysis.json) / [web and reproduction guide](../../WEB.md).
+- Scope is the main loader, with VM/protection checks removed. The separate original
+  `clyde_refine.py` pass is hash-gated to this reviewed attachment, not general register-VM support.
+- Clyde upstream MIT attribution is retained in `vendor/clyde/LICENSE`; null owns
+  the integration/design/refinement, not the upstream engine's authorship.
+- Existing StealB and steal Lua artifacts are unchanged by this addition.
 
 ## Follow-up: public v15.1 tools and StealB completeness
 

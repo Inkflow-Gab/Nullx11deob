@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""null's guided Luraph launcher. Python 3.10+; Rich is optional until setup."""
+"""null's guided Clyde + Luraph launcher. Python 3.10+; Rich is optional until setup."""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +22,7 @@ import venv
 
 ROOT = Path(__file__).resolve().parent
 ENGINE_ROOT = ROOT / "Deobfuscator" / "deobf"
-ENGINES = ("auto", "14.7", "14.8", "14.9", "15")
+ENGINES = ("auto", "14.7", "14.8", "14.9", "15", "clyde")
 BANNER = re.compile(r"Luraph Obfuscator v(\d+(?:\.\d+)*)", re.I)
 
 
@@ -81,7 +81,13 @@ def is_mobile_environment():
 
 
 def is_lua_path(path):
-    return path.name.lower().endswith((".lua", ".luau", ".lua.txt", ".luau.txt"))
+    if path.name.lower().endswith((".lua", ".luau", ".lua.txt", ".luau.txt")):
+        return True
+    if path.suffix.lower() == ".txt" and path.is_file():
+        with path.open("rb") as inp:
+            head = inp.read(4096).decode("utf-8", errors="replace")
+        return bool(BANNER.search(head) or re.search(r"Clyde Protection|ClydeProtection|clydeprotection", head, re.I))
+    return False
 
 
 def script_stem(path):
@@ -132,6 +138,14 @@ def detect_engine(path):
     """
     with path.open("rb") as source:
         head = source.read(20000).decode("utf-8-sig", errors="replace")
+    if re.search(r"Clyde Protection|ClydeProtection|clydeprotection", head, re.I):
+        node = shutil.which("node")
+        if node:
+            detected = subprocess.run([node, str(ROOT / "clyde_cli.js"), str(path), "--detect"],
+                                      capture_output=True, text=True, timeout=15)
+            if detected.returncode == 0 and json.loads(detected.stdout).get("isClyde"):
+                return "clyde", "Clyde signature verified by the pinned static detector"
+        return None, "Clyde signature found; install Node.js 16+ or select Clyde manually"
     match = BANNER.search(head[:4096])
     if match:
         version = match.group(1)
@@ -166,7 +180,7 @@ def choose_engine(ui, path):
         detected, reason = None, f"detector unavailable ({exc}); manual version selection is still available"
     ui.say(f"Detection: {detected or 'unknown'} — {reason}", "cyan")
     while True:
-        choice = ui.ask("Luraph version: auto / 14.7 / 14.8 / 14.9 / 15", "auto").lower().removeprefix("v")
+        choice = ui.ask("Engine: auto / clyde / 14.7 / 14.8 / 14.9 / 15", "auto").lower().removeprefix("v")
         if choice not in ENGINES:
             ui.say("Choose a listed version.", "yellow")
         elif choice == "auto" and not detected:
@@ -255,8 +269,10 @@ def doctor(ui):
     ast = find_ast()
     ui.say(f"Luau AST: {ast or 'missing — rerun --setup'}")
     checks = [ENGINE_ROOT / "cli.py", ENGINE_ROOT / "deob.py", ENGINE_ROOT / "envlog.luau"]
-    for version in ENGINES[1:]:
+    for version in (item for item in ENGINES[1:] if item != "clyde"):
         checks.append(ENGINE_ROOT / "obfuscators" / ("luraph_v" + version.replace(".", "_")) / "__init__.py")
+    checks.extend([ROOT / "clyde_cli.js", ROOT / "vendor/clyde/clyde_static_deob.js", ROOT / "vendor/clyde/LICENSE"])
+    ui.say("Clyde / Node.js: " + (shutil.which("node") or "optional Node.js missing — install it for Clyde"))
     missing = [str(p) for p in checks if not p.is_file()]
     ui.say("Engine files: " + (", ".join(missing) if missing else "all present"))
     build_path = str(ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin")) + os.pathsep + os.environ.get("PATH", "")
@@ -421,6 +437,14 @@ def setup(ui, skip_runtime=False, build_runtime=False, jobs=None):
 def engine_command(source, destination, engine, trace_only=False):
     if engine not in ENGINES[1:]:
         raise ValueError(f"Unsupported engine: {engine}")
+    if engine == "clyde":
+        if trace_only:
+            raise ValueError("Clyde is static; behavior-trace mode is not supported.")
+        node = shutil.which("node")
+        if not node:
+            raise RuntimeError("Clyde requires Node.js 16+.")
+        return [node, "--max-old-space-size=256", str(ROOT / "clyde_cli.js"), str(source), "-o", str(destination),
+                "--report", str(destination) + ".report.json"]
     if engine == "15":
         command = [sys.executable, "-B", "-u", str(ENGINE_ROOT / "deob.py"), str(source),
                    "-o", str(destination), "--obfuscator", "luraph_v15", "--no-pypy"]
@@ -514,7 +538,7 @@ def run_job(ui, source, destination, engine, *, trace_only=False, timeout=600, o
     if failures:
         raise RuntimeError("Native tool validation failed: " + "; ".join(failures) + ". Rerun --setup.")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    ui.say(f"Input: {source}\nEngine: Luraph {engine}\nOutput: {destination}", "cyan")
+    ui.say(f"Input: {source}\nEngine: {engine}\nOutput: {destination}", "cyan")
     ui.say("Mode: " + ("BEHAVIOR TRACE ONLY — not full deobfuscation" if trace_only
                             else "devirtualization (partial recovery is possible)"), "yellow")
     ui.say("Stages: input scanned → engine/logs → syntax check → save. No invented percent/ETA.")
@@ -528,6 +552,14 @@ def run_job(ui, source, destination, engine, *, trace_only=False, timeout=600, o
             raise RuntimeError(f"Engine failed (exit {code}); destination was not changed.")
         if not staged.is_file() or not staged.stat().st_size:
             raise RuntimeError("Engine produced no non-empty result; destination was not changed.")
+        if engine == "clyde":
+            from clyde_refine import refine_if_known
+            report_path = Path(str(staged) + ".report.json")
+            if refine_if_known(source, staged, report_path, find_ast()):
+                ui.say("Recovered the reviewed RoMidi loader with null's sample-scoped static pass; external payload not fetched.", "yellow")
+            metadata = json.loads(report_path.read_text())
+            if metadata.get("status") == "partial":
+                ui.say("WARNING: Clyde recovered only a partial layer; a VM remains. This is not full deobfuscation.", "yellow")
         ui.say("Engine finished; checking recovered Lua syntax…", "cyan")
         if not validate_result(staged):
             ui.say("WARNING: no executable statements recovered; result contains only comments/whitespace.\n"
@@ -584,7 +616,7 @@ def inspect_vm(ui, source, output=None, *, timeout=600):
 
 
 def interactive(ui, args):
-    ui.say("null • Luraph deobfuscator", "bold cyan")
+    ui.say("null • Clyde + Luraph deobfuscator", "bold cyan")
     ui.say("Only analyze code you own or are authorized to inspect. q = back; Ctrl+C = cancel.")
     while True:
         ui.say("\n[1] Start deobfuscation\n[2] Setup / repair dependencies\n[3] Environment check\n[4] Help\n[0] Exit", "cyan")
@@ -597,8 +629,9 @@ def interactive(ui, args):
                 ui.say(f"Scanned: {source.name} • {source.stat().st_size:,} bytes", "green")
                 engine = choose_engine(ui, source)
                 destination = select_output(ui, source)
-                trace = ui.confirm("Fast behavior trace only? (not full deobfuscation)")
-                ui.say("The engine executes the input in an emulated environment; this is not an OS security boundary.", "yellow")
+                trace = False if engine == "clyde" else ui.confirm("Fast behavior trace only? (not full deobfuscation)")
+                ui.say("Clyde uses static recovery; input is not executed." if engine == "clyde" else
+                       "The engine executes the input in an emulated environment; this is not an OS security boundary.", "yellow")
                 if ui.confirm("Start this job?", default=True):
                     run_job(ui, source, destination, engine, trace_only=trace, timeout=args.job_timeout,
                             overwrite=destination.exists())

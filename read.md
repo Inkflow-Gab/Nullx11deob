@@ -1,8 +1,56 @@
-# null • Luraph CLI
+# null • Clyde + Luraph
 
 Project owner / maintainer: **null**.
 
-A guided, colored terminal menu for the existing Luraph **14.7 / 14.8 / 14.9 / 15** engines. This launcher does not claim to be a new universal decryptor: recovery depends on the input, VM layout, runtime compatibility, and existing engines. Original variable names and every code path cannot always be recovered.
+A guided, colored terminal menu for pinned static **Clyde** and the existing Luraph **14.7 / 14.8 / 14.9 / 15** engines. This launcher does not claim to be a new universal decryptor: recovery depends on the input, VM layout, runtime compatibility, and existing engines. Original variable names and every code path cannot always be recovered.
+
+## Web workspace / launch from GitHub
+
+**[Open the web launcher guide](WEB.md)** for the actual backend, private GitHub
+Codespaces launcher, engine/mode selection, upload, live logs, cancellation,
+source preview and downloads. This is not a static GitHub Pages deobfuscator.
+Product and integration branding: **null**; upstream license notices remain intact.
+
+After the existing one-command setup below, install Node.js 16+ for Clyde (22 recommended).
+Termux:
+
+```bash
+pkg install nodejs
+```
+
+Ubuntu / Debian:
+
+```bash
+sudo apt install nodejs
+```
+
+Start the safe-mode website:
+
+```bash
+python3 web_server.py --host 0.0.0.0 --port 8080
+```
+
+On Termux:
+
+```bash
+python web_server.py --host 0.0.0.0 --port 8080
+```
+
+Clyde CLI (same auto/manual engine selector and output handling):
+
+```bash
+python3 start.py "your-script.txt" --engine clyde -o "output/local/recovered.lua"
+```
+
+Recognizable Clyde/Luraph `.txt` attachments are included in input scanning.
+Clyde is static; Luraph execution is owner-opt-in in the website. See [WEB.md](WEB.md)
+for private dynamic workers. Raw engine/required attribution: [THIRD_PARTY.md](THIRD_PARTY.md).
+
+**RoMidi result:** [recovered loader](output/recovered/RoMidiYessirAp.deobfuscated.lua)
+and [analysis evidence](output/recovered/RoMidiYessirAp.analysis.json). The attached
+file only loads an external Gist. That MIDI payload was not attached, fetched,
+executed or recovered. The loader was statically reconstructed and syntax-checked;
+behavioral equivalence is not certified.
 
 ## Easiest daily command
 
@@ -24,7 +72,7 @@ On **Windows**, use:
 py -3 start.py
 ```
 
-First use asks permission to create the local environment, install Rich, and prepare both native tools, then opens the menu. Later runs automatically select `.venv`; no activation is needed. Errors include platform-specific prerequisite instructions. The starter uses the existing, validated engine—not downloaded experimental deobfuscators.
+First use asks permission to create the local environment, install Rich, and prepare both native tools, then opens the menu. Later runs automatically select `.venv`; no activation is needed. Errors include platform-specific prerequisite instructions. The starter uses the existing native Luraph engine and the reviewed, vendored Clyde static engine; it does not download and run arbitrary candidate binaries.
 
 For explicit setup/repair without opening the menu:
 

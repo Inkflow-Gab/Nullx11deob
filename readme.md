@@ -1,10 +1,36 @@
-# null • Luraph Deobfuscator
+# null • Clyde + Luraph
 
 Owner / maintainer: **null**.
 
 The project now has a guided root-level CLI for the existing Luraph **14.7, 14.8, 14.9, and 15** engines: one-time setup, colors, file/folder selection, auto/manual version selection, safe output handling, and live engine logs with elapsed time.
 
 **[Open read.md for the complete setup guide, menu walkthrough, individually copyable Python commands, troubleshooting, and limitations.](read.md)**
+
+## Web workspace
+
+**[Launch / setup guide → WEB.md](WEB.md)** ·
+**[Open in GitHub Codespaces](https://github.com/codespaces/new?repo=1440370177&ref=arena%2F247512c5-nullx11deob)**
+
+Minimal vanilla HTML/CSS/JS frontend with a real Python backend: choose Clyde or
+Luraph, automatic/manual version, live logs, cancellation, static VM mapping,
+source preview/copy, and session-owned downloads. Default safe mode runs static
+Clyde and AST inspection; dynamic Luraph needs a private owner-enabled worker.
+Codespaces forwards private port 8080. **GitHub Pages alone cannot run the engines.**
+
+After normal setup and installing Node.js 16+:
+
+```bash
+python3 web_server.py --host 0.0.0.0 --port 8080
+```
+
+**RoMidiYessirAp:** [recovered loader](output/recovered/RoMidiYessirAp.deobfuscated.lua)
+· [analysis / hashes](output/recovered/RoMidiYessirAp.analysis.json). The attachment
+is a remote loader, not the MIDI implementation. Its external payload was not
+fetched or executed. Exact-sample static refinement is not general Clyde register-VM
+support. Prior StealB/steal results are preserved unchanged.
+
+Branding/integration: **null**. Clyde upstream Jamie / OmniDBF (MIT), pinned and
+vendored with unchanged source and required credits; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Simplest start — Linux / macOS / Ubuntu
 
