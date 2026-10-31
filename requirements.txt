@@ -1,0 +1,2 @@
+# CLI presentation only; deobfuscation engines use Python's standard library.
+rich>=13.7,<15

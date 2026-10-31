@@ -37,6 +37,11 @@ class LuraphV15(Obfuscator):
 
     def deobfuscate(self, job):
         from obfuscators.luraph_v15 import driver
+        header = HEADER.search(job.source[:500])
+        if header and header.group(1) == "15" and header.group(2) not in (None, "0"):
+            print("[!] Luraph v15.%s recognized; this is the v15 compatibility engine, "
+                  "not a guarantee of full support for that minor version. "
+                  "A saved trace or partial chunk is not full devirtualization." % header.group(2), file=sys.stderr)
         fixed = restore_header_newline(job.source)
         if fixed != job.source:
             # the copy keeps the input's name (Path2D cache, messages use job.input)

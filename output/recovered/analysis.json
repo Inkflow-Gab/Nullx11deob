@@ -1,0 +1,109 @@
+{
+  "owner": "null",
+  "analysis_date": "2026-10-31",
+  "environment": "Linux x86_64 / Python 3.11",
+  "artifacts": [
+    {
+      "input": "StealB.lua.txt",
+      "input_sha256": "76c791a91561b1cd8c8971bae786b393833315317b80bdb72443465dd12cb190",
+      "input_bytes": 1067422,
+      "detected_banner": "15.0",
+      "engine": "luraph_v15",
+      "artifact": "StealB.deobfuscated.lua",
+      "artifact_sha256": "d909b9c86eaa02d8a6746f21d723f068dcb10a90b1564284c0208112f21c0d5d",
+      "artifact_bytes": 463283,
+      "status": "devirtualized_with_runtime_limitations",
+      "syntax_valid": true,
+      "has_executable_statements": true,
+      "engine_recovered_functions": 1138,
+      "literal_webhook_credentials_redacted": 1,
+      "final_artifact_executed": false,
+      "behavioral_equivalence_verified": false,
+      "runtime_limitations": "external Chilli Library bootstrap invalid; external library not fetched"
+    },
+    {
+      "input": "steal.lua.txt",
+      "input_sha256": "67eeb8e868287746c10c2391a44785905e23e9a2843d7697a628a4ad060993b8",
+      "input_bytes": 636457,
+      "detected_banner": "15.1",
+      "engine": "luraph_v15",
+      "artifact": "steal.partial-decoded.lua",
+      "artifact_sha256": "c198d8df2672e4f000c748818d6f624daadb593bf6ee3583841ab9d0d08ccdba",
+      "artifact_bytes": 1740136,
+      "status": "partial_decoded_runtime_chunk_not_full_devirtualization",
+      "syntax_valid": true,
+      "has_executable_statements": true,
+      "engine_recovered_functions": 0,
+      "literal_webhook_credentials_redacted": 0,
+      "final_artifact_executed": false,
+      "behavioral_equivalence_verified": false,
+      "runtime_limitations": "endless-loop watchdog; zero captured VM prototypes; remaining VM wrapper in extracted chunk"
+    }
+  ],
+  "followup_research": {
+    "candidate_repository": "https://github.com/ludicious-claw/Deobfuscator-Luraph-V15-1",
+    "candidate_commit": "d78c335d96cce5ae3551c88e4a9857a40ab2c62b",
+    "full_15_1_recovery_achieved": false,
+    "experimental_sources_installed_in_main_engine": false,
+    "attempts": [
+      {
+        "runtime": "existing source-built Luau 0.739",
+        "functions": 36,
+        "unlifted_blocks": 11,
+        "nil_calls_in_debug_lift": 150,
+        "debug_lift_syntax_valid": true,
+        "selected_final_trace_syntax_valid": false,
+        "accepted_as_full_recovery": false
+      },
+      {
+        "runtime": "separately source-built candidate compatibility runtime",
+        "functions": 36,
+        "unlifted_blocks": 12,
+        "nil_calls_in_final_output": 55,
+        "selected_final_output_syntax_valid": false,
+        "accepted_as_full_recovery": false
+      }
+    ],
+    "report": "research-15.1.md"
+  },
+  "latest_steal_investigation": {
+    "analysis_date": "2026-10-31",
+    "report": "steal.blockers.json",
+    "full_recovery_achieved": false,
+    "live_baseline": {
+      "functions": 36,
+      "unlifted_blocks": 11,
+      "ast_nil_calls": 44,
+      "emitted_devirt_error_sites": 13,
+      "runtime_function_stubs": 6,
+      "syntax_valid": true
+    },
+    "numeric_carry_experiment": {
+      "functions": 36,
+      "unlifted_blocks": 11,
+      "ast_nil_calls": 123,
+      "syntax_valid": true,
+      "accepted": false
+    },
+    "published_lua_artifacts_changed": false,
+    "experimental_patch_installed_in_main_engine": false
+  },
+  "native_15_1_development": {
+    "stage": "static_vm_discovery",
+    "report": "native-15.1.md",
+    "vm_map": "steal.vm-map.json",
+    "map_source": "steal.partial-decoded.lua",
+    "map_source_sha256": "c198d8df2672e4f000c748818d6f624daadb593bf6ee3583841ab9d0d08ccdba",
+    "dispatchers": 8,
+    "curried_factories": 2,
+    "free_bindings_per_vm": [
+      34,
+      34
+    ],
+    "full_recovery_achieved": false,
+    "sample_rerun_captured_prototypes": 0,
+    "sample_rerun_status": "watchdog_abort_partial_trace_only",
+    "published_lua_artifacts_changed": false,
+    "tests_passed": 116
+  }
+}

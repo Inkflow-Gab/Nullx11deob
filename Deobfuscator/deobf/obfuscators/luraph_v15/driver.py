@@ -10,6 +10,7 @@ Then the captured protos are lifted (devirt.py), with constant rounds for
 code that never ran.
 """
 import os
+import json
 import re
 import sys
 import time
@@ -288,7 +289,11 @@ def run(job):
                 # the lifter needs the original source of every VM chunk
                 chunk_paths = [job.write(job.path(".chunk_%s.luau" % key), src, encoding="latin-1")
                                for key, src in raw_chunks.items()]
-                lift(job, runner, patched, cfg, chunks, run_text, ppath, dpath, chunk_paths)
+                if json.loads(protos_json).get("protos"):
+                    lift(job, runner, patched, cfg, chunks, run_text, ppath, dpath, chunk_paths)
+                else:
+                    print("[!] no VM function prototypes captured; returning a partial behavior trace, "
+                          "not a devirtualized program", file=sys.stderr)
     runner.finish()
     trace.status_line(body)
     if devirt_on and os.path.exists(dpath):

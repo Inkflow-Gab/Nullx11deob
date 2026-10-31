@@ -1,5 +1,5 @@
 """
-Builds bin/luau(.exe) from Luau source with one patch: the vector type's
+Builds bin/luau(.exe) and bin/luau-ast(.exe) from Luau source with one patch: the vector type's
 metatable is left writable (stock Luau freezes it in lveclib.cpp).
 
 In Roblox, Vector3 *is* the native vector type and the engine gives it a
@@ -44,26 +44,41 @@ def patch(src):
         f.write(text.replace(FREEZE, PATCHED))
 
 
+def is_mobile_environment():
+    return (hasattr(sys, "getandroidapilevel") or sys.platform == "android"
+            or bool(os.environ.get("TERMUX_VERSION"))
+            or "com.termux" in os.environ.get("PREFIX", ""))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     ap.add_argument("--tag", default=TAG, help="Luau release tag (default %(default)s)")
     ap.add_argument("--src", help="existing checkout to use (default: fresh clone in a temp folder)")
     ap.add_argument("--portable", action="store_true",
                     help="gcc: no -march=native (for a binary copied to another machine)")
+    ap.add_argument("--jobs", type=int, default=1 if is_mobile_environment() else 2,
+                    help="parallel compiler jobs (default: 1 on Termux/mobile, otherwise 2)")
     args = ap.parse_args()
-    tmp = None
-    src = args.src
-    if not src:
-        tmp = tempfile.mkdtemp(prefix="luau-build-")
-        src = os.path.join(tmp, "luau")
-        run(["git", "clone", "-q", "--depth", "1", "--branch", args.tag, REPO, src])
+    if args.jobs < 1:
+        ap.error("--jobs must be at least 1")
+    if args.src:
+        build_tools(os.path.abspath(os.path.expanduser(args.src)), args)
+    else:
+        # Context cleanup runs on compiler failure or Ctrl+C as well as success.
+        with tempfile.TemporaryDirectory(prefix="luau-build-") as tmp:
+            src = os.path.join(tmp, "luau")
+            run(["git", "clone", "-q", "--depth", "1", "--branch", args.tag, REPO, src])
+            build_tools(src, args)
+
+
+def build_tools(src, args):
     patch(src)
     build = os.path.join(src, "build-deobf")
     cfg = ["cmake", "-S", src, "-B", build, "-DCMAKE_BUILD_TYPE=Release",
            "-DLUAU_BUILD_TESTS=OFF", "-DLUAU_STATIC_CRT=ON"]
     if shutil.which("ninja"):
         cfg += ["-G", "Ninja"]
-    if not shutil.which("cl") and shutil.which("g++"):
+    if not is_mobile_environment() and sys.platform != "darwin" and not shutil.which("cl") and shutil.which("g++"):
         # MinGW/Linux gcc; static so the binary needs no compiler runtime DLLs.
         # Plain -O3 ran the pipeline ~30% slower than the official MSVC build;
         # with -march=native + LTO it is a bit faster (fetched.lua 33 s vs 35 s).
@@ -73,19 +88,23 @@ def main():
                 "-DCMAKE_CXX_FLAGS_RELEASE=%s -DNDEBUG" % opt,
                 "-DCMAKE_EXE_LINKER_FLAGS=-static " + opt]
     run(cfg)
-    run(["cmake", "--build", build, "--config", "Release", "--target", "Luau.Repl.CLI",
-         "--parallel"])
-    exe = "luau.exe" if os.name == "nt" else "luau"
-    for cand in (os.path.join(build, "Release", exe), os.path.join(build, exe)):
-        if os.path.exists(cand):
-            os.makedirs(BIN, exist_ok=True)
-            shutil.copy2(cand, os.path.join(BIN, exe))
-            print("[+] wrote " + os.path.join(BIN, exe), file=sys.stderr)
-            break
-    else:
-        sys.exit("[!] built binary not found under " + build)
-    if tmp:
-        shutil.rmtree(tmp, ignore_errors=True)
+    # Instrumentation and readability passes require the AST CLI as well.
+    run(["cmake", "--build", build, "--config", "Release", "--target", "Luau.Repl.CLI", "Luau.Ast.CLI",
+         "--parallel", str(args.jobs)])
+    products = []
+    for name in ("luau", "luau-ast"):
+        exe = name + (".exe" if os.name == "nt" else "")
+        for cand in (os.path.join(build, "Release", exe), os.path.join(build, exe)):
+            if os.path.exists(cand):
+                products.append((cand, os.path.join(BIN, exe)))
+                break
+        else:
+            sys.exit("[!] built " + exe + " not found under " + build)
+    # Verify both products exist before changing either installed tool.
+    os.makedirs(BIN, exist_ok=True)
+    for source, destination in products:
+        shutil.copy2(source, destination)
+        print("[+] wrote " + destination, file=sys.stderr)
 
 
 if __name__ == "__main__":
